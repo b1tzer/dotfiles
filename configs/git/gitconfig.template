@@ -1,0 +1,31 @@
+[user]
+    name  = {{GIT_USER_NAME}}
+    email = {{GIT_USER_EMAIL}}
+
+[core]
+    editor     = vim
+    autocrlf   = input
+    whitespace = fix,-indent-with-non-tab,trailing-space,cr-at-eol
+
+[color]
+    ui = auto
+
+[pull]
+    rebase = false
+
+[push]
+    default = simple
+
+[alias]
+    st  = status
+    co  = checkout
+    br  = branch
+    lg  = log --oneline --graph --decorate --all
+    undo = reset HEAD~1 --mixed
+    amend = commit --amend --no-edit
+
+[diff]
+    tool = vimdiff
+
+[merge]
+    tool = vimdiff

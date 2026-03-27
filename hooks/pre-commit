@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# =============================================================================
+# hooks/pre-commit - Git Pre-commit Hook
+# =============================================================================
+# Automatically installed by bootstrap.sh via:
+#   cp hooks/pre-commit .git/hooks/pre-commit
+#   chmod +x .git/hooks/pre-commit
+#
+# Runs secret scanning on all staged files before each commit.
+# =============================================================================
+
+set -euo pipefail
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$HOOK_DIR/.." && pwd)"
+
+# Source the secret check library
+# shellcheck source=lib/secret_check.sh
+source "$REPO_ROOT/lib/secret_check.sh"
+
+echo "[pre-commit] Running secret scan on staged files..."
+
+if secret_check_staged; then
+  echo "[pre-commit] ✓ No secrets detected. Proceeding with commit."
+  exit 0
+else
+  echo "[pre-commit] ✗ Commit blocked. Please remove secrets before committing."
+  echo "[pre-commit]   To bypass (use with caution): git commit --no-verify"
+  exit 1
+fi

@@ -1,0 +1,248 @@
+# =============================================================================
+# tools.yaml - Development Environment Tool Manifest
+# =============================================================================
+# Declare all tools you want to manage across machines.
+# Supported platforms: ubuntu, macos, windows
+# Install methods: apt, brew, winget, choco, script, manual
+#
+# Field reference:
+#   name         - Tool identifier (used for installed-check via `command -v`)
+#   description  - Brief description of the tool
+#   check_cmd    - Command to verify installation (default: same as name)
+#   platforms    - Per-platform install configuration
+#     install    - Install command or package name
+#     method     - Package manager: apt | brew | winget | choco | script | manual
+#     script     - Path to install script (when method=script)
+#   version      - (optional) Pinned version string
+#   deprecated   - (optional) Mark tool as deprecated, default: false
+#   replaced_by  - (optional) Name of the replacement tool
+#   migration_note - (optional) Instructions for migrating from deprecated tool
+# =============================================================================
+
+tools:
+
+  # ---------------------------------------------------------------------------
+  # Shell & Terminal
+  # ---------------------------------------------------------------------------
+  - name: zsh
+    description: "Z shell - feature-rich interactive shell"
+    platforms:
+      ubuntu:
+        method: apt
+        install: zsh
+      macos:
+        method: brew
+        install: zsh
+      windows:
+        method: manual
+        install: "Install via WSL or Git Bash"
+
+  - name: oh-my-zsh
+    description: "Framework for managing Zsh configuration"
+    check_cmd: "[ -d $HOME/.oh-my-zsh ]"
+    platforms:
+      ubuntu:
+        method: script
+        script: "https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh"
+      macos:
+        method: script
+        script: "https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh"
+
+  - name: starship
+    description: "Cross-shell prompt - fast and customizable"
+    platforms:
+      ubuntu:
+        method: script
+        script: "https://starship.rs/install.sh"
+      macos:
+        method: brew
+        install: starship
+      windows:
+        method: winget
+        install: Starship.Starship
+
+  # ---------------------------------------------------------------------------
+  # Version Control
+  # ---------------------------------------------------------------------------
+  - name: git
+    description: "Distributed version control system"
+    platforms:
+      ubuntu:
+        method: apt
+        install: git
+      macos:
+        method: brew
+        install: git
+      windows:
+        method: winget
+        install: Git.Git
+
+  - name: gh
+    description: "GitHub CLI"
+    platforms:
+      ubuntu:
+        method: apt
+        install: gh
+      macos:
+        method: brew
+        install: gh
+      windows:
+        method: winget
+        install: GitHub.cli
+
+  # ---------------------------------------------------------------------------
+  # Container & Virtualization
+  # ---------------------------------------------------------------------------
+  - name: docker
+    description: "Container platform"
+    check_cmd: docker
+    platforms:
+      ubuntu:
+        method: script
+        script: "https://get.docker.com"
+      macos:
+        method: brew
+        install: "--cask docker"
+      windows:
+        method: winget
+        install: Docker.DockerDesktop
+
+  # ---------------------------------------------------------------------------
+  # Language Runtimes & Version Managers
+  # ---------------------------------------------------------------------------
+  - name: nvm
+    description: "Node.js version manager"
+    check_cmd: "[ -d $HOME/.nvm ]"
+    platforms:
+      ubuntu:
+        method: script
+        script: "https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh"
+      macos:
+        method: script
+        script: "https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh"
+
+  - name: pyenv
+    description: "Python version manager"
+    check_cmd: "[ -d $HOME/.pyenv ]"
+    platforms:
+      ubuntu:
+        method: script
+        script: "https://pyenv.run"
+      macos:
+        method: brew
+        install: pyenv
+
+  # ---------------------------------------------------------------------------
+  # CLI Utilities
+  # ---------------------------------------------------------------------------
+  - name: fzf
+    description: "Fuzzy finder for the command line"
+    platforms:
+      ubuntu:
+        method: apt
+        install: fzf
+      macos:
+        method: brew
+        install: fzf
+      windows:
+        method: winget
+        install: junegunn.fzf
+
+  - name: ripgrep
+    description: "Fast grep replacement (rg)"
+    check_cmd: rg
+    platforms:
+      ubuntu:
+        method: apt
+        install: ripgrep
+      macos:
+        method: brew
+        install: ripgrep
+      windows:
+        method: winget
+        install: BurntSushi.ripgrep.MSVC
+
+  - name: bat
+    description: "cat with syntax highlighting"
+    platforms:
+      ubuntu:
+        method: apt
+        install: bat
+      macos:
+        method: brew
+        install: bat
+      windows:
+        method: winget
+        install: sharkdp.bat
+
+  - name: eza
+    description: "Modern replacement for ls (successor to exa)"
+    platforms:
+      ubuntu:
+        method: apt
+        install: eza
+      macos:
+        method: brew
+        install: eza
+      windows:
+        method: winget
+        install: eza-community.eza
+
+  - name: exa
+    description: "Modern replacement for ls (deprecated, use eza instead)"
+    deprecated: true
+    replaced_by: eza
+    migration_note: "exa is unmaintained. Run sync to install eza as replacement. Config alias 'ls=exa' should be updated to 'ls=eza'."
+    platforms:
+      ubuntu:
+        method: apt
+        install: exa
+      macos:
+        method: brew
+        install: exa
+
+  - name: tmux
+    description: "Terminal multiplexer"
+    platforms:
+      ubuntu:
+        method: apt
+        install: tmux
+      macos:
+        method: brew
+        install: tmux
+      windows:
+        method: manual
+        install: "Use WSL for tmux on Windows"
+
+  - name: jq
+    description: "Command-line JSON processor"
+    platforms:
+      ubuntu:
+        method: apt
+        install: jq
+      macos:
+        method: brew
+        install: jq
+      windows:
+        method: winget
+        install: jqlang.jq
+
+  - name: curl
+    description: "Data transfer tool"
+    platforms:
+      ubuntu:
+        method: apt
+        install: curl
+      macos:
+        method: brew
+        install: curl
+
+  - name: wget
+    description: "Non-interactive network downloader"
+    platforms:
+      ubuntu:
+        method: apt
+        install: wget
+      macos:
+        method: brew
+        install: wget

@@ -1,6 +1,7 @@
 " =============================================================================
 " .vimrc - Vim configuration
-" Managed by dotfiles repo
+" Managed by chezmoi. Edit via: chezmoi edit ~/.vimrc
+" Apply via: chezmoi apply
 " =============================================================================
 
 " Basic settings

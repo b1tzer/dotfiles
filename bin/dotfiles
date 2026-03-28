@@ -1,0 +1,416 @@
+#!/usr/bin/env bash
+# =============================================================================
+# bin/dotfiles - 开发环境管理工具入口脚本
+# =============================================================================
+# 用法：
+#   ./bin/dotfiles <subcommand> [options]
+#   ./bin/dotfiles --help
+#
+# 子命令：
+#   sync      同步工具安装 + dotfiles 链接
+#   update    git pull + sync（拉取最新配置后同步）
+#   doctor    检查环境健康状态
+#   status    显示当前安装/链接状态（doctor 的别名）
+#   cache     管理下载缓存
+#   test      运行测试套件
+# =============================================================================
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# ---------------------------------------------------------------------------
+# 加载 lib 模块（带缺失检测守卫）
+# ---------------------------------------------------------------------------
+_require_lib() {
+  local lib_file="$REPO_ROOT/lib/$1"
+  if [[ ! -f "$lib_file" ]]; then
+    printf "  [✗]  error: required module 'lib/%s' not found. Is your repo complete?\n" "$1" >&2
+    printf "         hint:  Run: git status  to check for missing files.\n" >&2
+    exit 127
+  fi
+  # shellcheck source=/dev/null
+  source "$lib_file"
+}
+
+_require_lib "logging.sh"
+
+# ---------------------------------------------------------------------------
+# 顶层帮助信息
+# ---------------------------------------------------------------------------
+_show_help() {
+  cat <<'EOF'
+
+dotfiles — 开发环境管理工具
+
+USAGE:
+  ./bin/dotfiles <subcommand> [options]
+  ./bin/dotfiles --help
+
+SUBCOMMANDS:
+  Sync & Update
+    sync      Sync tool installations and dotfile symlinks
+    update    Pull latest config from git, then sync
+
+  Diagnostics
+    doctor    Check environment health (tools, dotfiles, secrets)
+    status    Alias for doctor
+
+  Maintenance
+    cache     Manage local download cache
+    test      Run test suite
+
+Run './bin/dotfiles <subcommand> --help' for subcommand-specific options.
+
+EXAMPLES:
+  ./bin/dotfiles sync                    # Full sync (tools + dotfiles)
+  ./bin/dotfiles sync --only git,jq      # Only sync specific tools
+  ./bin/dotfiles update                  # Pull latest + full sync
+  ./bin/dotfiles doctor                  # Check environment health
+  ./bin/dotfiles cache status            # Show cache usage
+
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# 未知子命令提示（前缀匹配 "Did you mean?"）
+# ---------------------------------------------------------------------------
+_suggest_command() {
+  local input="$1"
+  local known_cmds=("sync" "update" "doctor" "status" "cache" "test")
+  local suggestions=()
+
+  # 前缀匹配（cmd 以 input 开头）
+  for cmd in "${known_cmds[@]}"; do
+    if [[ "$cmd" == "${input}"* ]]; then
+      suggestions+=("$cmd")
+    fi
+  done
+
+  # 反向前缀匹配（input 以 cmd 开头，如 syncc → sync）
+  if [[ "${#suggestions[@]}" -eq 0 ]]; then
+    for cmd in "${known_cmds[@]}"; do
+      if [[ "$input" == "${cmd}"* ]]; then
+        suggestions+=("$cmd")
+      fi
+    done
+  fi
+
+  # 若无前缀匹配，尝试包含匹配
+  if [[ "${#suggestions[@]}" -eq 0 ]]; then
+    for cmd in "${known_cmds[@]}"; do
+      if [[ "$cmd" == *"${input}"* ]]; then
+        suggestions+=("$cmd")
+      fi
+    done
+  fi
+
+  printf "  [✗]  error: unknown command '%s'.\n" "$input" >&2
+  if [[ "${#suggestions[@]}" -gt 0 ]]; then
+    printf "         Did you mean '%s'?\n" "${suggestions[0]}" >&2
+  fi
+  printf "         Run './bin/dotfiles --help' to see available commands.\n" >&2
+  exit 1
+}
+
+# ---------------------------------------------------------------------------
+# 子命令：sync
+# ---------------------------------------------------------------------------
+_cmd_sync() {
+  local sync_script="$REPO_ROOT/scripts/sync.sh"
+  local link_script="$REPO_ROOT/scripts/link_dotfiles.sh"
+
+  # 解析 sync 专属 flag
+  local do_tools=true
+  local do_dotfiles=true
+  local passthrough_args=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --tools)     do_dotfiles=false ; shift ;;
+      --dotfiles)  do_tools=false    ; shift ;;
+      -h|--help)
+        cat <<'EOF'
+Usage: dotfiles sync [options]
+
+Options:
+  --tools             Only sync tool installations, skip dotfiles linking
+  --dotfiles          Only link dotfiles, skip tool installations
+  --only <tools>      Only process specified tools (comma-separated)
+  --skip-runtimes     Skip mise-managed runtime installations
+  --force, -f         Reinstall tools even if already installed
+  --dry-run           Preview changes without making modifications
+  --quiet, -q         Only output errors and final summary
+  -h, --help          Show this help message
+
+Examples:
+  dotfiles sync                        # Full sync
+  dotfiles sync --tools                # Tools only
+  dotfiles sync --dotfiles             # Dotfiles only
+  dotfiles sync --only git,ripgrep     # Sync specific tools
+  dotfiles sync --dry-run              # Preview changes
+  dotfiles sync --force                # Force reinstall
+EOF
+        exit 0
+        ;;
+      *) passthrough_args+=("$1") ; shift ;;
+    esac
+  done
+
+  if [[ "$do_tools" == "true" ]]; then
+    if [[ ! -f "$sync_script" ]]; then
+      _error_actionable \
+        "sync.sh not found at: $sync_script" \
+        "The scripts/ directory may be incomplete" \
+        "Run: git status  to check for missing files"
+      exit 1
+    fi
+    bash "$sync_script" "${passthrough_args[@]}"
+  fi
+
+  if [[ "$do_dotfiles" == "true" ]]; then
+    if [[ ! -f "$link_script" ]]; then
+      _error_actionable \
+        "link_dotfiles.sh not found at: $link_script" \
+        "The scripts/ directory may be incomplete" \
+        "Run: git status  to check for missing files"
+      exit 1
+    fi
+    # 将 --dry-run 透传给 link_dotfiles.sh
+    local link_args=()
+    for arg in "${passthrough_args[@]:-}"; do
+      [[ "$arg" == "--dry-run" ]] && link_args+=("--dry-run")
+    done
+    bash "$link_script" "${link_args[@]}"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# 子命令：update（git pull + sync）
+# ---------------------------------------------------------------------------
+_cmd_update() {
+  local passthrough_args=("$@")
+
+  # 解析 --help
+  for arg in "$@"; do
+    if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
+      cat <<'EOF'
+Usage: dotfiles update [sync-options]
+
+Pull the latest configuration from git, then run a full sync.
+Equivalent to: git pull --ff-only && dotfiles sync
+
+Options:
+  All options from 'dotfiles sync' are supported.
+  -h, --help    Show this help message
+
+Examples:
+  dotfiles update                  # Pull + full sync
+  dotfiles update --dry-run        # Pull + preview changes
+EOF
+      exit 0
+    fi
+  done
+
+  _section "Pulling latest configuration"
+
+  if ! git -C "$REPO_ROOT" rev-parse --git-dir &>/dev/null; then
+    _warn "Not a git repository. Skipping pull."
+  else
+    local current_branch
+    current_branch="$(git -C "$REPO_ROOT" branch --show-current 2>/dev/null || echo 'unknown')"
+    _info "Branch: $current_branch"
+    git -C "$REPO_ROOT" pull --ff-only
+    _ok "Repository updated"
+  fi
+
+  _cmd_sync "${passthrough_args[@]}"
+}
+
+# ---------------------------------------------------------------------------
+# 子命令：doctor / status
+# ---------------------------------------------------------------------------
+_cmd_doctor() {
+  local doctor_script="$REPO_ROOT/scripts/doctor.sh"
+
+  # 解析 --help
+  for arg in "$@"; do
+    if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
+      cat <<'EOF'
+Usage: dotfiles doctor [options]
+
+Check the health of your development environment.
+Inspects: tool installations, dotfile symlinks, secrets, lib modules.
+
+Options:
+  -h, --help    Show this help message
+
+Exit codes:
+  0 - Environment is healthy (or only warnings)
+  1 - One or more critical issues found
+
+Examples:
+  dotfiles doctor          # Full health check
+  dotfiles status          # Alias for doctor
+EOF
+      exit 0
+    fi
+  done
+
+  if [[ ! -f "$doctor_script" ]]; then
+    _error_actionable \
+      "doctor.sh not found at: $doctor_script" \
+      "The scripts/ directory may be incomplete" \
+      "Run: git status  to check for missing files"
+    exit 1
+  fi
+
+  bash "$doctor_script" "$@"
+}
+
+# ---------------------------------------------------------------------------
+# 子命令：cache
+# ---------------------------------------------------------------------------
+_cmd_cache() {
+  local cache_script="$REPO_ROOT/scripts/cache.sh"
+
+  # 解析 --help 或无参数
+  if [[ $# -eq 0 ]] || [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
+    cat <<'EOF'
+Usage: dotfiles cache <action>
+
+Manage the local download cache used to avoid re-downloading resources.
+
+Actions:
+  status    List all cached files with size and expiry info
+  clear     Delete all cached files and show freed disk space
+
+Options:
+  -h, --help    Show this help message
+
+Examples:
+  dotfiles cache status    # Show cache contents
+  dotfiles cache clear     # Clear all cached files
+EOF
+    exit 0
+  fi
+
+  if [[ ! -f "$cache_script" ]]; then
+    _error_actionable \
+      "cache.sh not found at: $cache_script" \
+      "The scripts/ directory may be incomplete" \
+      "Run: git status  to check for missing files"
+    exit 1
+  fi
+
+  bash "$cache_script" "$@"
+}
+
+# ---------------------------------------------------------------------------
+# 子命令：test
+# ---------------------------------------------------------------------------
+_cmd_test() {
+  local tests_dir="$REPO_ROOT/tests"
+  local run_integration=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --integration) run_integration=true ; shift ;;
+      -h|--help)
+        cat <<'EOF'
+Usage: dotfiles test [options]
+
+Run the test suite. By default, only unit tests are run (no network required).
+
+Options:
+  --integration    Also run integration tests (uses cache, avoids re-downloads)
+  -h, --help       Show this help message
+
+Exit codes:
+  0 - All tests passed
+  1 - One or more tests failed
+
+Examples:
+  dotfiles test                  # Run unit tests only (< 30s)
+  dotfiles test --integration    # Run all tests
+EOF
+        exit 0
+        ;;
+      *) _warn "Unknown test option: $1" ; shift ;;
+    esac
+  done
+
+  if [[ ! -d "$tests_dir" ]]; then
+    _error_actionable \
+      "tests/ directory not found" \
+      "The test suite has not been set up yet" \
+      "Check the repository for tests/ directory"
+    exit 1
+  fi
+
+  local failed=0
+  local passed=0
+
+  _section "Running unit tests"
+  for test_file in "$tests_dir/unit"/test_*.sh; do
+    [[ -f "$test_file" ]] || continue
+    local test_name
+    test_name="$(basename "$test_file")"
+    if bash "$test_file"; then
+      _ok "PASS: $test_name"
+      passed=$(( passed + 1 ))
+    else
+      _error "FAIL: $test_name"
+      failed=$(( failed + 1 ))
+    fi
+  done
+
+  if [[ "$run_integration" == "true" ]]; then
+    _section "Running integration tests"
+    for test_file in "$tests_dir/integration"/test_*.sh; do
+      [[ -f "$test_file" ]] || continue
+      local test_name
+      test_name="$(basename "$test_file")"
+      if bash "$test_file"; then
+        _ok "PASS: $test_name"
+        passed=$(( passed + 1 ))
+      else
+        _error "FAIL: $test_name"
+        failed=$(( failed + 1 ))
+      fi
+    done
+  fi
+
+  echo
+  echo "  Results: $passed passed, $failed failed"
+  echo
+
+  [[ "$failed" -eq 0 ]]
+}
+
+# ---------------------------------------------------------------------------
+# Main 入口：子命令分发
+# ---------------------------------------------------------------------------
+main() {
+  # 无参数或 --help：显示帮助
+  if [[ $# -eq 0 ]] || [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
+    _show_help
+    exit 0
+  fi
+
+  local subcommand="$1"
+  shift
+
+  case "$subcommand" in
+    sync)    _cmd_sync    "$@" ;;
+    update)  _cmd_update  "$@" ;;
+    doctor)  _cmd_doctor  "$@" ;;
+    status)  _cmd_doctor  "$@" ;;  # status 是 doctor 的别名
+    cache)   _cmd_cache   "$@" ;;
+    test)    _cmd_test    "$@" ;;
+    *)       _suggest_command "$subcommand" ;;
+  esac
+}
+
+main "$@"

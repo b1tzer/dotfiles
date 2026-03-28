@@ -1,0 +1,48 @@
+# tests/fixtures/sample_tools.yaml
+# =============================================================================
+# 最小化的 tools.yaml，供单元测试和集成测试使用。
+# 只包含 3 个工具，避免测试时下载大量资源。
+# =============================================================================
+
+tools:
+  # 工具 1：通过 apt/brew 安装的轻量工具（< 1 MB）
+  - name: jq
+    description: "JSON processor"
+    check_cmd: jq
+    platforms:
+      ubuntu:
+        method: apt
+        install: jq
+      macos:
+        method: brew
+        install: jq
+
+  # 工具 2：通过 script 安装的工具（mock 模式下不实际下载）
+  - name: starship
+    description: "Cross-shell prompt"
+    check_cmd: starship
+    platforms:
+      ubuntu:
+        method: script
+        script: "https://starship.rs/install.sh"
+        install_type: shell_args
+        script_args: "--yes"
+        binary: starship
+      macos:
+        method: brew
+        install: starship
+
+  # 工具 3：已废弃的工具（用于测试 deprecated 处理路径）
+  - name: legacy-tool
+    description: "A deprecated tool (for testing)"
+    check_cmd: legacy-tool
+    deprecated: true
+    replaced_by: jq
+    migration_note: "Use jq instead for JSON processing"
+    platforms:
+      ubuntu:
+        method: apt
+        install: legacy-tool
+      macos:
+        method: brew
+        install: legacy-tool

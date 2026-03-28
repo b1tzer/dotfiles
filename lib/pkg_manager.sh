@@ -1,192 +1,326 @@
 #!/usr/bin/env bash
 # =============================================================================
-# lib/pkg_manager.sh - Package Manager Adapter Module
+# lib/pkg_manager.sh - 包管理器抽象层
 # =============================================================================
-# Depends on: lib/detect_os.sh (must be sourced first)
+# 提供跨平台的包管理函数：
+#   pkg_manager_init              - 初始化包管理器（更新索引等）
+#   pkg_is_installed <cmd>        - 检查命令是否已安装
+#   pkg_install <pkg> <method>    - 安装包（apt/brew/cargo/pip 等）
+#   pkg_run_script <url> <type> <binary> [args...]
+#                                 - 下载并运行安装脚本（带本地缓存）
 #
-# Exports:
-#   PKG_MANAGER  - "apt" | "brew" | "winget" | "choco" | "dnf" | "pacman"
+# 依赖：
+#   - lib/detect_os.sh 已 source（OS_TYPE 变量已设置）
+#   - lib/logging.sh 已 source（日志函数已可用）
 #
-# Public functions:
-#   pkg_install <package>          - Install a package
-#   pkg_is_installed <cmd>         - Check if a command/tool is installed
-#   pkg_manager_init               - Initialize/update package manager
-#   pkg_run_script <url> [args]    - Download and run an install script
+# Mock 模式（单元测试）：
+#   设置 DOTFILES_TEST_MODE=1 可将所有安装操作替换为 stub，不执行实际操作。
+#
+# 缓存：
+#   DOTFILES_CACHE_DIR（默认 ~/.cache/dotfiles）
+#   DOTFILES_CACHE_TTL_DAYS（默认 7 天）
 # =============================================================================
 
-# Prevent double-sourcing
-if [ -n "${_PKG_MANAGER_LOADED:-}" ]; then
-  return 0
-fi
-_PKG_MANAGER_LOADED=1
-
-# Ensure OS detection has run
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/detect_os.sh
-source "$SCRIPT_DIR/detect_os.sh"
+# 防止重复 source
+[[ -n "${_PKG_MANAGER_SH_LOADED:-}" ]] && return 0
+_PKG_MANAGER_SH_LOADED=1
 
 # ---------------------------------------------------------------------------
-# Determine package manager based on OS
+# 缓存配置
 # ---------------------------------------------------------------------------
-case "$OS_TYPE" in
-  macos)
-    if command -v brew &>/dev/null; then
-      PKG_MANAGER="brew"
-    else
-      PKG_MANAGER="brew_missing"
-    fi
-    ;;
-  ubuntu)
-    PKG_MANAGER="apt"
-    ;;
-  fedora)
-    PKG_MANAGER="dnf"
-    ;;
-  arch)
-    PKG_MANAGER="pacman"
-    ;;
-  windows)
-    if command -v winget &>/dev/null; then
-      PKG_MANAGER="winget"
-    elif command -v choco &>/dev/null; then
-      PKG_MANAGER="choco"
-    else
-      PKG_MANAGER="unknown"
-    fi
-    ;;
-  *)
-    PKG_MANAGER="unknown"
-    ;;
-esac
-
-export PKG_MANAGER
+DOTFILES_CACHE_DIR="${DOTFILES_CACHE_DIR:-$HOME/.cache/dotfiles}"
+DOTFILES_CACHE_TTL_DAYS="${DOTFILES_CACHE_TTL_DAYS:-7}"
 
 # ---------------------------------------------------------------------------
-# pkg_manager_init: Update package index / ensure pkg manager is ready
+# 内部工具函数
+# ---------------------------------------------------------------------------
+
+# 检查缓存文件是否有效（存在且未过期）
+_pkg_cache_valid() {
+  local cache_file="$1"
+  [[ -f "$cache_file" ]] || return 1
+
+  local ttl_seconds=$(( DOTFILES_CACHE_TTL_DAYS * 86400 ))
+  local now
+  now="$(date +%s)"
+  local mtime
+  # macOS 和 Linux 的 stat 语法不同
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    mtime="$(stat -f %m "$cache_file" 2>/dev/null || echo 0)"
+  else
+    mtime="$(stat -c %Y "$cache_file" 2>/dev/null || echo 0)"
+  fi
+
+  (( now - mtime < ttl_seconds ))
+}
+
+# 将 URL 转换为缓存文件名（替换特殊字符）
+_pkg_cache_filename() {
+  local url="$1"
+  local subdir="${2:-scripts}"
+  local filename
+  filename="$(echo "$url" | sed 's|https\?://||; s|[/:]|_|g')"
+  echo "$DOTFILES_CACHE_DIR/$subdir/$filename"
+}
+
+# ---------------------------------------------------------------------------
+# pkg_manager_init
+# 初始化包管理器（更新软件包索引）
 # ---------------------------------------------------------------------------
 pkg_manager_init() {
-  echo "[INFO] Initializing package manager: $PKG_MANAGER"
-  case "$PKG_MANAGER" in
-    apt)
-      sudo apt-get update -qq
+  # Mock 模式：跳过
+  if [[ "${DOTFILES_TEST_MODE:-0}" == "1" ]]; then
+    echo "[MOCK] would call: pkg_manager_init"
+    return 0
+  fi
+
+  case "${OS_TYPE:-unknown}" in
+    ubuntu)
+      _info "Updating apt package index..."
+      local _sudo=""
+      [[ "$(id -u)" -ne 0 ]] && _sudo="sudo"
+      $_sudo apt-get update -qq
       ;;
-    brew)
+    macos)
+      _info "Updating Homebrew..."
       brew update --quiet
       ;;
-    brew_missing)
-      echo "[INFO] Homebrew not found. Installing Homebrew..."
-      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-      # Re-detect brew after install
-      if [ "$OS_ARCH" = "arm64" ]; then
-        eval "$(/opt/homebrew/bin/brew shellenv)"
-      else
-        eval "$(/usr/local/bin/brew shellenv)"
-      fi
-      PKG_MANAGER="brew"
-      ;;
-    dnf)
-      sudo dnf check-update -q || true
-      ;;
-    pacman)
-      sudo pacman -Sy --noconfirm
-      ;;
-    winget|choco)
-      # No explicit update step needed
-      ;;
     *)
-      echo "[WARN] Unknown package manager. Manual installation may be required." >&2
+      _warn "pkg_manager_init: unsupported OS '$OS_TYPE', skipping"
       ;;
   esac
 }
 
 # ---------------------------------------------------------------------------
-# pkg_is_installed <check_cmd>
-# Returns 0 if installed, 1 if not
-# check_cmd can be:
-#   - a plain command name: "git", "docker"
-#   - a shell expression starting with "[": "[ -d $HOME/.nvm ]"
+# pkg_is_installed <cmd>
+# 检查命令是否在 PATH 中可用
+# 返回 0（已安装）或 1（未安装）
 # ---------------------------------------------------------------------------
 pkg_is_installed() {
-  local check_cmd="$1"
-  if [[ "$check_cmd" == \[* ]]; then
-    # Shell expression check
-    eval "$check_cmd" 2>/dev/null
-    return $?
-  else
-    command -v "$check_cmd" &>/dev/null
-    return $?
+  local cmd="$1"
+
+  # Mock 模式：查询 MOCK_INSTALLED_TOOLS（逗号分隔）
+  if [[ "${DOTFILES_TEST_MODE:-0}" == "1" ]]; then
+    local mock_tools="${MOCK_INSTALLED_TOOLS:-}"
+    if [[ -n "$mock_tools" ]]; then
+      # 检查 cmd 是否在逗号分隔列表中
+      local IFS=','
+      for t in $mock_tools; do
+        [[ "$t" == "$cmd" ]] && return 0
+      done
+    fi
+    return 1
   fi
+
+  command -v "$cmd" &>/dev/null
 }
 
 # ---------------------------------------------------------------------------
-# pkg_install <package> [method] [extra_args]
-# Installs a package using the current PKG_MANAGER
-# method: apt | brew | winget | choco | script | manual
+# pkg_install <pkg> <method>
+# 使用指定方法安装包
+# method: apt | brew | cargo | pip | pip3 | npm | gem | go
 # ---------------------------------------------------------------------------
 pkg_install() {
-  local package="$1"
-  local method="${2:-$PKG_MANAGER}"
-  local extra_args="${3:-}"
+  local pkg="$1"
+  local method="${2:-}"
+
+  # Mock 模式：记录调用，返回配置的退出码
+  if [[ "${DOTFILES_TEST_MODE:-0}" == "1" ]]; then
+    echo "[MOCK] would call: pkg_install $pkg $method"
+    MOCK_INSTALLED_LOG+=("$pkg")
+    return "${MOCK_INSTALL_EXIT_CODE:-0}"
+  fi
 
   case "$method" in
     apt)
-      sudo apt-get install -y "$package" $extra_args
+      local _sudo=""
+      [[ "$(id -u)" -ne 0 ]] && _sudo="sudo"
+      $_sudo apt-get install -y "$pkg"
       ;;
     brew)
-      # Support cask installs: package may start with "--cask"
-      # shellcheck disable=SC2086
-      brew install $package $extra_args
+      brew install "$pkg"
       ;;
-    winget)
-      winget install --id "$package" --silent --accept-package-agreements --accept-source-agreements $extra_args
+    cargo)
+      cargo install "$pkg"
       ;;
-    choco)
-      choco install "$package" -y $extra_args
+    pip|pip3)
+      pip3 install --user "$pkg"
       ;;
-    dnf)
-      sudo dnf install -y "$package" $extra_args
+    npm)
+      npm install -g "$pkg"
       ;;
-    pacman)
-      sudo pacman -S --noconfirm "$package" $extra_args
+    gem)
+      gem install "$pkg"
       ;;
-    script)
-      # package is a URL here; handled by pkg_run_script
-      pkg_run_script "$package"
-      ;;
-    manual)
-      echo "[SKIP] '$package' requires manual installation: $extra_args"
-      return 2  # Special return code: manual skip
+    go)
+      go install "$pkg"
       ;;
     *)
-      echo "[ERROR] Unknown install method: $method" >&2
+      # 自动根据 OS_TYPE 选择包管理器
+      case "${OS_TYPE:-unknown}" in
+        ubuntu) pkg_install "$pkg" "apt" ;;
+        macos)  pkg_install "$pkg" "brew" ;;
+        *)
+          _error "pkg_install: unknown method '$method' and unsupported OS '$OS_TYPE'"
+          return 1
+          ;;
+      esac
+      ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# pkg_run_script <url> <install_type> <binary> [extra_args...]
+# 下载并运行安装脚本，支持本地缓存（7 天过期）
+#
+# install_type:
+#   shell        - bash <(curl -fsSL <url>)
+#   shell_args   - bash <(curl -fsSL <url>) <extra_args>
+#   tarball      - 下载 .tar.gz 并解压 <binary> 到 ~/.local/bin/
+#   zip          - 下载 .zip 并解压 <binary> 到 ~/.local/bin/
+# ---------------------------------------------------------------------------
+pkg_run_script() {
+  local url="$1"
+  local install_type="${2:-shell}"
+  local binary="${3:-}"
+  shift 3
+  local extra_args=("$@")
+
+  # Mock 模式：记录调用，返回配置的退出码
+  if [[ "${DOTFILES_TEST_MODE:-0}" == "1" ]]; then
+    echo "[MOCK] would call: pkg_run_script $url $install_type $binary"
+    MOCK_SCRIPT_LOG+=("$url")
+    return "${MOCK_SCRIPT_EXIT_CODE:-0}"
+  fi
+
+  # 确保缓存目录存在
+  mkdir -p "$DOTFILES_CACHE_DIR/scripts"
+  mkdir -p "$DOTFILES_CACHE_DIR/binaries"
+  mkdir -p "$HOME/.local/bin"
+
+  case "$install_type" in
+    shell|shell_args)
+      local cache_file
+      cache_file="$(_pkg_cache_filename "$url" "scripts")"
+
+      if _pkg_cache_valid "$cache_file"; then
+        _info "[cache] hit: $(basename "$cache_file")"
+      else
+        _info "[cache] downloading: $url"
+        if ! curl -fsSL "$url" -o "$cache_file" 2>&1; then
+          # 区分 404 和网络超时
+          local http_code
+          http_code="$(curl -o /dev/null -s -w "%{http_code}" "$url" 2>/dev/null || echo 000)"
+          rm -f "$cache_file"
+          if [[ "$http_code" == "404" ]]; then
+            _error_actionable \
+              "failed to download script: $url" \
+              "HTTP 404 Not Found — the URL may be outdated" \
+              "Check the project's release page for the latest install URL"
+          else
+            _error_actionable \
+              "failed to download script: $url" \
+              "Network error (HTTP $http_code) — possible connection timeout" \
+              "Check your network connection, or retry with: ./dotfiles sync --only $binary"
+          fi
+          return 1
+        fi
+        _info "[cache] saved: $cache_file"
+      fi
+
+      bash "$cache_file" "${extra_args[@]}"
+      ;;
+
+    tarball)
+      local cache_file
+      cache_file="$(_pkg_cache_filename "$url" "binaries")"
+
+      if _pkg_cache_valid "$cache_file"; then
+        _info "[cache] hit: $(basename "$cache_file")"
+      else
+        _info "[cache] downloading: $url"
+        if ! curl -fsSL "$url" -o "$cache_file" 2>&1; then
+          local http_code
+          http_code="$(curl -o /dev/null -s -w "%{http_code}" "$url" 2>/dev/null || echo 000)"
+          rm -f "$cache_file"
+          if [[ "$http_code" == "404" ]]; then
+            _error_actionable \
+              "failed to download tarball: $url" \
+              "HTTP 404 Not Found — the release may not exist for your architecture" \
+              "Check the project's GitHub releases page"
+          else
+            _error_actionable \
+              "failed to download tarball: $url" \
+              "Network error (HTTP $http_code) — possible connection timeout" \
+              "Check your network connection, or retry with: ./dotfiles sync --only $binary"
+          fi
+          return 1
+        fi
+        _info "[cache] saved: $cache_file"
+      fi
+
+      # 解压并安装 binary
+      local tmp_dir
+      tmp_dir="$(mktemp -d)"
+      tar -xzf "$cache_file" -C "$tmp_dir"
+      # 在解压目录中查找 binary
+      local found_binary
+      found_binary="$(find "$tmp_dir" -name "$binary" -type f | head -1)"
+      if [[ -z "$found_binary" ]]; then
+        _error_actionable \
+          "binary '$binary' not found in tarball" \
+          "The tarball structure may have changed" \
+          "Check the project's release notes"
+        rm -rf "$tmp_dir"
+        return 1
+      fi
+      install -m 755 "$found_binary" "$HOME/.local/bin/$binary"
+      rm -rf "$tmp_dir"
+      _ok "Installed $binary to ~/.local/bin/"
+      ;;
+
+    zip)
+      local cache_file
+      cache_file="$(_pkg_cache_filename "$url" "binaries")"
+
+      if _pkg_cache_valid "$cache_file"; then
+        _info "[cache] hit: $(basename "$cache_file")"
+      else
+        _info "[cache] downloading: $url"
+        if ! curl -fsSL "$url" -o "$cache_file" 2>&1; then
+          local http_code
+          http_code="$(curl -o /dev/null -s -w "%{http_code}" "$url" 2>/dev/null || echo 000)"
+          rm -f "$cache_file"
+          _error_actionable \
+            "failed to download zip: $url" \
+            "Network error (HTTP $http_code)" \
+            "Check your network connection, or retry with: ./dotfiles sync --only $binary"
+          return 1
+        fi
+        _info "[cache] saved: $cache_file"
+      fi
+
+      local tmp_dir
+      tmp_dir="$(mktemp -d)"
+      unzip -q "$cache_file" -d "$tmp_dir"
+      local found_binary
+      found_binary="$(find "$tmp_dir" -name "$binary" -type f | head -1)"
+      if [[ -z "$found_binary" ]]; then
+        _error_actionable \
+          "binary '$binary' not found in zip" \
+          "The zip structure may have changed" \
+          "Check the project's release notes"
+        rm -rf "$tmp_dir"
+        return 1
+      fi
+      install -m 755 "$found_binary" "$HOME/.local/bin/$binary"
+      rm -rf "$tmp_dir"
+      _ok "Installed $binary to ~/.local/bin/"
+      ;;
+
+    *)
+      _error "pkg_run_script: unknown install_type '$install_type'"
       return 1
       ;;
   esac
 }
-
-# ---------------------------------------------------------------------------
-# pkg_run_script <url> [args...]
-# Downloads and executes a remote install script
-# ---------------------------------------------------------------------------
-pkg_run_script() {
-  local url="$1"
-  shift
-  local args=("$@")
-
-  echo "[INFO] Running install script from: $url"
-
-  if command -v curl &>/dev/null; then
-    curl -fsSL "$url" | bash -s -- "${args[@]}"
-  elif command -v wget &>/dev/null; then
-    wget -qO- "$url" | bash -s -- "${args[@]}"
-  else
-    echo "[ERROR] Neither curl nor wget is available to download install script." >&2
-    return 1
-  fi
-}
-
-# Run info if executed directly
-if [ "${BASH_SOURCE[0]}" = "$0" ]; then
-  echo "PKG_MANAGER: $PKG_MANAGER"
-  echo "OS_TYPE    : $OS_TYPE"
-fi

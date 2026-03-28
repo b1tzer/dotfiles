@@ -37,23 +37,13 @@ tools:
         method: manual
         install: "Install via WSL or Git Bash"
 
-  - name: oh-my-zsh
-    description: "Framework for managing Zsh configuration"
-    check_cmd: "[ -d $HOME/.oh-my-zsh ]"
-    platforms:
-      ubuntu:
-        method: script
-        script: "https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh"
-      macos:
-        method: script
-        script: "https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh"
-
   - name: starship
     description: "Cross-shell prompt - fast and customizable"
     platforms:
       ubuntu:
         method: script
         script: "https://starship.rs/install.sh"
+        script_args: "--yes"
       macos:
         method: brew
         install: starship
@@ -110,27 +100,30 @@ tools:
   # ---------------------------------------------------------------------------
   # Language Runtimes & Version Managers
   # ---------------------------------------------------------------------------
-  - name: nvm
-    description: "Node.js version manager"
-    check_cmd: "[ -d $HOME/.nvm ]"
+  - name: mise
+    description: "Polyglot runtime version manager (replaces nvm/pyenv/rustup etc.)"
+    check_cmd: mise
     platforms:
       ubuntu:
         method: script
-        script: "https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh"
-      macos:
-        method: script
-        script: "https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh"
-
-  - name: pyenv
-    description: "Python version manager"
-    check_cmd: "[ -d $HOME/.pyenv ]"
-    platforms:
-      ubuntu:
-        method: script
-        script: "https://pyenv.run"
+        script: "https://mise.run"
       macos:
         method: brew
-        install: pyenv
+        install: mise
+      windows:
+        method: winget
+        install: jdx.mise
+    runtimes:
+      - name: java
+        version: latest
+      - name: python
+        version: latest
+      - name: node
+        version: lts
+      - name: rust
+        version: latest
+      - name: cmake
+        version: latest
 
   # ---------------------------------------------------------------------------
   # CLI Utilities
@@ -179,8 +172,9 @@ tools:
     description: "Modern replacement for ls (successor to exa)"
     platforms:
       ubuntu:
-        method: apt
-        install: eza
+        method: script
+        script: "https://raw.githubusercontent.com/eza-community/eza/main/deb.asc"
+        install_type: eza_deb
       macos:
         method: brew
         install: eza
@@ -188,18 +182,49 @@ tools:
         method: winget
         install: eza-community.eza
 
-  - name: exa
-    description: "Modern replacement for ls (deprecated, use eza instead)"
-    deprecated: true
-    replaced_by: eza
-    migration_note: "exa is unmaintained. Run sync to install eza as replacement. Config alias 'ls=exa' should be updated to 'ls=eza'."
+  - name: yazi
+    description: "Blazing fast terminal file manager written in Rust"
+    platforms:
+      ubuntu:
+        method: script
+        script: "https://github.com/sxyazi/yazi/releases/latest/download/yazi-x86_64-unknown-linux-musl.zip"
+        install_type: zip_binary
+        binary: yazi
+      macos:
+        method: brew
+        install: yazi
+      windows:
+        method: winget
+        install: sxyazi.yazi
+
+  - name: zellij
+    description: "Terminal workspace and multiplexer"
+    platforms:
+      ubuntu:
+        method: script
+        script: "https://github.com/zellij-org/zellij/releases/latest/download/zellij-x86_64-unknown-linux-musl.tar.gz"
+        install_type: tar_binary
+        binary: zellij
+      macos:
+        method: brew
+        install: zellij
+      windows:
+        method: manual
+        install: "Use WSL for zellij on Windows"
+
+  - name: fd
+    description: "Simple, fast and user-friendly alternative to find"
+    check_cmd: fd
     platforms:
       ubuntu:
         method: apt
-        install: exa
+        install: fd-find
       macos:
         method: brew
-        install: exa
+        install: fd
+      windows:
+        method: winget
+        install: sharkdp.fd
 
   - name: tmux
     description: "Terminal multiplexer"
@@ -246,3 +271,21 @@ tools:
       macos:
         method: brew
         install: wget
+
+  # ---------------------------------------------------------------------------
+  # Terminal Emulators (macOS only)
+  # ---------------------------------------------------------------------------
+  - name: ghostty
+    description: "Fast, feature-rich, cross-platform terminal emulator"
+    platforms:
+      macos:
+        method: brew
+        install: "--cask ghostty"
+
+  - name: iterm2
+    description: "macOS terminal replacement with advanced features"
+    check_cmd: "[ -d /Applications/iTerm.app ] || [ -d $HOME/Applications/iTerm.app ]"
+    platforms:
+      macos:
+        method: brew
+        install: "--cask iterm2"

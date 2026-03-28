@@ -1,30 +1,17 @@
 #!/usr/bin/env bash
 # =============================================================================
-# bootstrap.sh - One-command Environment Initialization Entry Point
+# bootstrap.sh - 环境初始化入口（Legacy 兼容层）
+# DEPRECATED: use ./dotfiles sync instead
 # =============================================================================
-# This is the SINGLE entry point for setting up a new machine or syncing
-# an existing one with the latest configuration.
+# 本文件保留用于向后兼容。新用法请使用 dotfiles 入口脚本：
+#   ./dotfiles sync              # 全量同步
+#   ./dotfiles sync --tools      # 仅同步工具
+#   ./dotfiles sync --dotfiles   # 仅链接 dotfiles
+#   ./dotfiles update            # git pull + sync
 #
-# Usage:
-#   # First-time setup on a new machine:
-#   git clone <your-dotfiles-repo> ~/dotfiles && cd ~/dotfiles
-#   ./bootstrap.sh
-#
-#   # Sync latest changes from remote (pull + apply):
-#   ./bootstrap.sh --pull
-#
-#   # Preview what would change without making modifications:
-#   ./bootstrap.sh --dry-run
-#
-#   # Only sync tools (skip dotfiles linking):
-#   ./bootstrap.sh --tools-only
-#
-#   # Only link dotfiles (skip tool installation):
-#   ./bootstrap.sh --dotfiles-only
-#
-# Exit codes:
-#   0 - Success (all steps completed or skipped cleanly)
-#   1 - One or more steps failed
+# 退出码：
+#   0 - 所有步骤成功或仅有警告
+#   1 - 一个或多个步骤失败
 # =============================================================================
 
 set -euo pipefail
@@ -33,7 +20,24 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
 
 # ---------------------------------------------------------------------------
-# Parse arguments
+# 加载 lib 模块（带缺失检测守卫）
+# ---------------------------------------------------------------------------
+_require_lib() {
+  local lib_file="$REPO_ROOT/lib/$1"
+  if [[ ! -f "$lib_file" ]]; then
+    printf "  [✗]  error: required module 'lib/%s' not found. Is your repo complete?\n" "$1" >&2
+    printf "         hint:  Run: git status  to check for missing files.\n" >&2
+    exit 127
+  fi
+  # shellcheck source=/dev/null
+  source "$lib_file"
+}
+
+_require_lib "logging.sh"
+_require_lib "detect_os.sh"
+
+# ---------------------------------------------------------------------------
+# 解析参数
 # ---------------------------------------------------------------------------
 DRY_RUN=false
 DO_PULL=false
@@ -51,6 +55,7 @@ while [[ $# -gt 0 ]]; do
     -h|--help)
       cat <<EOF
 Usage: $0 [options]
+DEPRECATED: use ./dotfiles sync instead
 
 Options:
   --pull           Git pull latest config before applying
@@ -60,51 +65,20 @@ Options:
   --skip-secrets   Skip the secrets initialization step
   -h, --help       Show this help message
 
-Examples:
-  ./bootstrap.sh                  # Full setup on a new machine
-  ./bootstrap.sh --pull           # Sync latest changes from remote
-  ./bootstrap.sh --dry-run        # Preview what would change
-  ./bootstrap.sh --tools-only     # Only install tools
+New usage (recommended):
+  ./dotfiles sync              # Full sync
+  ./dotfiles sync --tools      # Tools only
+  ./dotfiles sync --dotfiles   # Dotfiles only
+  ./dotfiles update            # git pull + sync
 EOF
       exit 0
       ;;
-    *) echo "[WARN] Unknown argument: $1" >&2 ; shift ;;
+    *) _warn "Unknown argument: $1" ; shift ;;
   esac
 done
 
 # ---------------------------------------------------------------------------
-# Color output helpers
-# ---------------------------------------------------------------------------
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-BOLD='\033[1m'
-NC='\033[0m'  # No Color
-
-_banner() {
-  echo
-  echo -e "${BOLD}${BLUE}╔══════════════════════════════════════════════════════╗${NC}"
-  echo -e "${BOLD}${BLUE}║${NC}  $1"
-  echo -e "${BOLD}${BLUE}╚══════════════════════════════════════════════════════╝${NC}"
-}
-
-_step()    { echo; echo -e "${BOLD}━━━ $* ━━━${NC}"; }
-_ok()      { echo -e "  ${GREEN}[✓]${NC}  $*"; }
-_info()    { echo -e "  ${BLUE}[i]${NC}  $*"; }
-_warn()    { echo -e "  ${YELLOW}[!]${NC}  $*" >&2; }
-_error()   { echo -e "  ${RED}[✗]${NC}  $*" >&2; }
-_section_result() {
-  local status="$1"; shift
-  if [ "$status" -eq 0 ]; then
-    _ok "$* completed successfully"
-  else
-    _warn "$* completed with warnings/errors (exit: $status)"
-  fi
-}
-
-# ---------------------------------------------------------------------------
-# Step tracking
+# 步骤追踪
 # ---------------------------------------------------------------------------
 declare -a STEPS_OK=()
 declare -a STEPS_WARN=()
@@ -112,21 +86,23 @@ declare -a STEPS_FAIL=()
 
 _record_step() {
   local name="$1"
-  local exit_code="$2"
-  if [ "$exit_code" -eq 0 ]; then
+  local rc="$2"
+  local is_warn="${3:-false}"  # 第三个参数：是否作为警告（非致命）记录
+
+  if [[ "$rc" -eq 0 ]]; then
     STEPS_OK+=("$name")
-  elif [ "$exit_code" -eq 2 ]; then
-    STEPS_WARN+=("$name")
+  elif [[ "$is_warn" == "true" ]]; then
+    STEPS_WARN+=("$name (exit: $rc)")
   else
-    STEPS_FAIL+=("$name")
+    STEPS_FAIL+=("$name (exit: $rc)")
   fi
 }
 
 # ---------------------------------------------------------------------------
-# Step 0: Git pull (optional)
+# Step 0: Git pull（可选）
 # ---------------------------------------------------------------------------
 _step_pull() {
-  _step "Step 0: Pulling latest configuration"
+  _section "Step 0: Pulling latest configuration"
 
   if ! git -C "$REPO_ROOT" rev-parse --git-dir &>/dev/null; then
     _warn "Not a git repository. Skipping pull."
@@ -137,8 +113,8 @@ _step_pull() {
   current_branch="$(git -C "$REPO_ROOT" branch --show-current 2>/dev/null || echo 'unknown')"
   _info "Branch: $current_branch"
 
-  if [ "$DRY_RUN" = "true" ]; then
-    _info "[DRY-RUN] Would run: git pull"
+  if [[ "$DRY_RUN" == "true" ]]; then
+    _info "[DRY-RUN] Would run: git pull --ff-only"
     return 0
   fi
 
@@ -147,31 +123,29 @@ _step_pull() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 1: OS detection
+# Step 1: OS 检测
 # ---------------------------------------------------------------------------
 _step_detect_os() {
-  _step "Step 1: Detecting operating system"
-  # shellcheck source=lib/detect_os.sh
-  source "$REPO_ROOT/lib/detect_os.sh"
+  _section "Step 1: Detecting operating system"
   detect_os_assert_supported || return 1
   _ok "OS: $OS_TYPE ($OS_ARCH)$([ "$IS_WSL" = "true" ] && echo " [WSL]")"
 }
 
 # ---------------------------------------------------------------------------
-# Step 2: Install Git hooks
+# Step 2: 安装 Git hooks
 # ---------------------------------------------------------------------------
 _step_install_hooks() {
-  _step "Step 2: Installing Git hooks"
+  _section "Step 2: Installing Git hooks"
 
   local hooks_src="$REPO_ROOT/hooks"
   local hooks_dest="$REPO_ROOT/.git/hooks"
 
-  if [ ! -d "$REPO_ROOT/.git" ]; then
+  if [[ ! -d "$REPO_ROOT/.git" ]]; then
     _warn "No .git directory found. Skipping hook installation."
     return 0
   fi
 
-  if [ ! -d "$hooks_src" ]; then
+  if [[ ! -d "$hooks_src" ]]; then
     _warn "No hooks/ directory found. Skipping."
     return 0
   fi
@@ -181,7 +155,7 @@ _step_install_hooks() {
     hook_name="$(basename "$hook_file")"
     local dest="$hooks_dest/$hook_name"
 
-    if [ "$DRY_RUN" = "true" ]; then
+    if [[ "$DRY_RUN" == "true" ]]; then
       _info "[DRY-RUN] Would install hook: $hook_name"
       continue
     fi
@@ -193,24 +167,22 @@ _step_install_hooks() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 3: Secrets initialization
+# Step 3: Secrets 初始化（非致命步骤）
 # ---------------------------------------------------------------------------
 _step_secrets() {
-  _step "Step 3: Secrets configuration"
+  _section "Step 3: Secrets configuration"
 
   local secrets_script="$REPO_ROOT/scripts/init_secrets.sh"
 
-  if [ ! -f "$secrets_script" ]; then
+  if [[ ! -f "$secrets_script" ]]; then
     _warn "init_secrets.sh not found. Skipping."
     return 0
   fi
 
-  # Check if secrets already configured
-  if [ -f "$HOME/.secrets.local.env" ]; then
+  if [[ -f "$HOME/.secrets.local.env" ]]; then
     _info "Found existing secrets at ~/.secrets.local.env"
     if bash "$secrets_script" --check; then
       _ok "All required secrets are configured."
-      # Re-apply templates in case configs changed
       bash "$secrets_script" --apply
       return 0
     else
@@ -218,7 +190,7 @@ _step_secrets() {
     fi
   fi
 
-  if [ "$DRY_RUN" = "true" ]; then
+  if [[ "$DRY_RUN" == "true" ]]; then
     _info "[DRY-RUN] Would run: init_secrets.sh"
     return 0
   fi
@@ -227,72 +199,72 @@ _step_secrets() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 4: Tool synchronization
+# Step 4: 工具同步
 # ---------------------------------------------------------------------------
 _step_sync_tools() {
-  _step "Step 4: Synchronizing tools"
+  _section "Step 4: Synchronizing tools"
 
   local sync_script="$REPO_ROOT/scripts/sync.sh"
 
-  if [ ! -f "$sync_script" ]; then
-    _error "sync.sh not found at: $sync_script"
+  if [[ ! -f "$sync_script" ]]; then
+    _error_actionable \
+      "sync.sh not found at: $sync_script" \
+      "The scripts/ directory may be incomplete" \
+      "Run: git status  to check for missing files"
     return 1
   fi
 
   local args=()
-  [ "$DRY_RUN" = "true" ] && args+=("--dry-run")
+  [[ "$DRY_RUN" == "true" ]] && args+=("--dry-run")
 
   bash "$sync_script" "${args[@]}"
 }
 
 # ---------------------------------------------------------------------------
-# Step 5: Dotfiles linking
+# Step 5: Dotfiles 链接
 # ---------------------------------------------------------------------------
 _step_link_dotfiles() {
-  _step "Step 5: Linking dotfiles"
+  _section "Step 5: Linking dotfiles"
 
   local link_script="$REPO_ROOT/scripts/link_dotfiles.sh"
 
-  if [ ! -f "$link_script" ]; then
-    _error "link_dotfiles.sh not found at: $link_script"
+  if [[ ! -f "$link_script" ]]; then
+    _error_actionable \
+      "link_dotfiles.sh not found at: $link_script" \
+      "The scripts/ directory may be incomplete" \
+      "Run: git status  to check for missing files"
     return 1
   fi
 
   local args=()
-  [ "$DRY_RUN" = "true" ] && args+=("--dry-run")
+  [[ "$DRY_RUN" == "true" ]] && args+=("--dry-run")
 
   bash "$link_script" "${args[@]}"
 }
 
 # ---------------------------------------------------------------------------
-# Step 6: Post-setup instructions
+# Step 6: 安装后提示
 # ---------------------------------------------------------------------------
 _step_post_setup() {
-  _step "Step 6: Post-setup"
+  _section "Step 6: Post-setup"
 
   echo
   echo "  Next steps:"
   echo "  ─────────────────────────────────────────────────────"
 
-  # Check if zsh is default shell
-  if [ "$SHELL" != "$(command -v zsh 2>/dev/null)" ]; then
+  if [[ "$SHELL" != "$(command -v zsh 2>/dev/null)" ]]; then
     if command -v zsh &>/dev/null; then
       echo "  • Set zsh as default shell:"
       echo "      chsh -s \$(which zsh)"
     fi
   fi
 
-  # Check if oh-my-zsh is installed
-  if [ ! -d "$HOME/.oh-my-zsh" ]; then
-    echo "  • Install Oh My Zsh plugins after setup:"
-    echo "      git clone https://github.com/zsh-users/zsh-autosuggestions \\"
-    echo "        \${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions"
-    echo "      git clone https://github.com/zsh-users/zsh-syntax-highlighting \\"
-    echo "        \${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting"
+  if ! command -v mise &>/dev/null; then
+    echo "  • Install mise (runtime version manager):"
+    echo "      curl https://mise.run | sh"
   fi
 
-  # Remind about secrets
-  if [ ! -f "$HOME/.secrets.local.env" ]; then
+  if [[ ! -f "$HOME/.secrets.local.env" ]]; then
     echo "  • Configure your secrets:"
     echo "      ./scripts/init_secrets.sh"
   fi
@@ -303,31 +275,34 @@ _step_post_setup() {
 }
 
 # ---------------------------------------------------------------------------
-# Final summary
+# 最终摘要（三态：✓ OK / ⚠ WARN / ✗ FAIL）
 # ---------------------------------------------------------------------------
 _print_final_summary() {
   echo
-  echo -e "${BOLD}╔══════════════════════════════════════════════════════╗${NC}"
-  echo -e "${BOLD}║               BOOTSTRAP SUMMARY                     ║${NC}"
-  echo -e "${BOLD}╚══════════════════════════════════════════════════════╝${NC}"
+  _banner "BOOTSTRAP SUMMARY  •  $(date '+%Y-%m-%d %H:%M:%S')"
   echo
-  echo -e "  ${GREEN}✓  Completed : ${#STEPS_OK[@]}${NC}"
-  for s in "${STEPS_OK[@]:-}"; do [ -n "$s" ] && echo "       - $s"; done
 
-  if [ "${#STEPS_WARN[@]}" -gt 0 ]; then
-    echo -e "  ${YELLOW}⚠  Warnings  : ${#STEPS_WARN[@]}${NC}"
-    for s in "${STEPS_WARN[@]}"; do echo "       - $s"; done
+  if [[ "${#STEPS_OK[@]}" -gt 0 ]]; then
+    printf "  \033[0;32m✓  OK      : %d\033[0m\n" "${#STEPS_OK[@]}"
+    for s in "${STEPS_OK[@]}"; do echo "       - $s"; done
   fi
 
-  if [ "${#STEPS_FAIL[@]}" -gt 0 ]; then
-    echo -e "  ${RED}✗  Failed    : ${#STEPS_FAIL[@]}${NC}"
-    for s in "${STEPS_FAIL[@]}"; do echo "       - $s"; done
+  if [[ "${#STEPS_WARN[@]}" -gt 0 ]]; then
+    printf "  \033[1;33m⚠  WARN    : %d\033[0m\n" "${#STEPS_WARN[@]}" >&2
+    for s in "${STEPS_WARN[@]}"; do echo "       - $s" >&2; done
+  fi
+
+  if [[ "${#STEPS_FAIL[@]}" -gt 0 ]]; then
+    printf "  \033[0;31m✗  FAIL    : %d\033[0m\n" "${#STEPS_FAIL[@]}" >&2
+    for s in "${STEPS_FAIL[@]}"; do echo "       - $s" >&2; done
+    echo
+    printf "  \033[0;31mBootstrap completed with failures. See above for details.\033[0m\n" >&2
     echo
     return 1
   fi
 
   echo
-  echo -e "  ${GREEN}${BOLD}Bootstrap complete!${NC}"
+  printf "  \033[0;32mBootstrap complete!\033[0m\n"
   echo
 }
 
@@ -340,47 +315,53 @@ main() {
   echo "  Dry run : $DRY_RUN"
   echo "  Pull    : $DO_PULL"
 
-  local exit_code=0
-
-  # Step 0: Pull (optional)
-  if [ "$DO_PULL" = "true" ]; then
+  # Step 0: Pull（可选）
+  if [[ "$DO_PULL" == "true" ]]; then
     _step_pull
-    _record_step "git pull" $?
+    local rc_pull=$?
+    _record_step "git pull" "$rc_pull"
   fi
 
-  # Step 1: OS detection (always required)
-  _step_detect_os || { _error "OS detection failed. Aborting."; exit 1; }
+  # Step 1: OS 检测（必须成功）
+  _step_detect_os || {
+    _error "OS detection failed. Aborting."
+    exit 1
+  }
   _record_step "OS detection" 0
 
   # Step 2: Git hooks
   _step_install_hooks
-  _record_step "Git hooks" $?
+  local rc_hooks=$?
+  _record_step "Git hooks" "$rc_hooks"
 
-  # Step 3: Secrets (unless skipped)
-  if [ "$SKIP_SECRETS" = "false" ] && [ "$TOOLS_ONLY" = "false" ]; then
-    _step_secrets || true  # Non-fatal: user can configure secrets later
-    _record_step "Secrets init" $?
+  # Step 3: Secrets（非致命步骤，失败记为 WARN）
+  if [[ "$SKIP_SECRETS" == "false" && "$TOOLS_ONLY" == "false" ]]; then
+    _step_secrets  # non-fatal: user can configure secrets later
+    local rc_secrets=$?
+    _record_step "Secrets init" "$rc_secrets" "true"  # 第三参数 true = 失败记为 WARN
   fi
 
-  # Step 4: Tool sync (unless dotfiles-only)
-  if [ "$DOTFILES_ONLY" = "false" ]; then
+  # Step 4: 工具同步（除非 dotfiles-only）
+  if [[ "$DOTFILES_ONLY" == "false" ]]; then
     _step_sync_tools
-    exit_code=$?
-    _record_step "Tool sync" $exit_code
+    local rc_tools=$?
+    _record_step "Tool sync" "$rc_tools"
   fi
 
-  # Step 5: Dotfiles linking (unless tools-only)
-  if [ "$TOOLS_ONLY" = "false" ]; then
+  # Step 5: Dotfiles 链接（除非 tools-only）
+  if [[ "$TOOLS_ONLY" == "false" ]]; then
     _step_link_dotfiles
-    exit_code=$?
-    _record_step "Dotfiles link" $exit_code
+    local rc_dotfiles=$?
+    _record_step "Dotfiles link" "$rc_dotfiles"
   fi
 
-  # Step 6: Post-setup hints
+  # Step 6: 安装后提示
   _step_post_setup
   _record_step "Post-setup" 0
 
   _print_final_summary
+  # 有 FAIL 则退出码 1；仅 WARN 则退出码 0（警告不阻断 CI）
+  [[ "${#STEPS_FAIL[@]}" -eq 0 ]]
 }
 
 main "$@"

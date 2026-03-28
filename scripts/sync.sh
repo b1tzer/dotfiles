@@ -1,77 +1,116 @@
 #!/usr/bin/env bash
 # =============================================================================
-# scripts/sync.sh - Core Sync Engine
+# scripts/sync.sh - 核心同步引擎
 # =============================================================================
-# Reads tools.yaml and installs/checks all declared tools on the current OS.
+# 读取 tools.yaml，在当前 OS 上安装/检查所有声明的工具。
 #
-# Usage:
-#   ./scripts/sync.sh              # Install all tools
-#   ./scripts/sync.sh --dry-run    # Show diff only, no actual install
-#   ./scripts/sync.sh --tool git   # Sync a single tool
+# 本脚本通常由 dotfiles 入口脚本调用，也可直接运行。
 #
-# Exit codes:
-#   0 - All tools installed/skipped successfully
-#   1 - One or more tools failed to install
+# 用法（通过入口脚本）：
+#   ./dotfiles sync                    # 安装所有工具
+#   ./dotfiles sync --only git,jq      # 只处理指定工具
+#   ./dotfiles sync --skip-runtimes    # 跳过 mise 运行时
+#   ./dotfiles sync --force            # 强制重装已安装的工具
+#   ./dotfiles sync --dry-run          # 预览，不实际安装
+#   ./dotfiles sync --quiet / -q       # 只输出错误和摘要
+#
+# 直接运行：
+#   bash scripts/sync.sh [flags]
+#
+# 退出码：
+#   0 - 所有工具安装/跳过成功
+#   1 - 一个或多个工具安装失败
 # =============================================================================
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-LOG_FILE="$REPO_ROOT/sync.log"
-TOOLS_YAML="$REPO_ROOT/tools.yaml"
-
-# Source library modules
-# shellcheck source=lib/detect_os.sh
-source "$REPO_ROOT/lib/detect_os.sh"
-# shellcheck source=lib/pkg_manager.sh
-source "$REPO_ROOT/lib/pkg_manager.sh"
+LOG_FILE="${DOTFILES_LOG_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/sync.log}"
+mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || LOG_FILE="/tmp/dotfiles-sync-$$.log"
 
 # ---------------------------------------------------------------------------
-# Parse arguments
+# 加载 lib 模块（带缺失检测守卫）
+# ---------------------------------------------------------------------------
+_require_lib() {
+  local lib_file="$REPO_ROOT/lib/$1"
+  if [[ ! -f "$lib_file" ]]; then
+    printf "  [✗]  error: required module 'lib/%s' not found. Is your repo complete?\n" "$1" >&2
+    printf "         hint:  Run: git status  to check for missing files.\n" >&2
+    exit 127
+  fi
+  # shellcheck source=/dev/null
+  source "$lib_file"
+}
+
+_require_lib "logging.sh"
+_require_lib "detect_os.sh"
+_require_lib "pkg_manager.sh"
+
+# ---------------------------------------------------------------------------
+# 解析参数
 # ---------------------------------------------------------------------------
 DRY_RUN=false
-SINGLE_TOOL=""
+ONLY_TOOLS=""        # 逗号分隔的工具名列表
+SKIP_RUNTIMES=false
+FORCE=false
+QUIET=false
+TOOLS_YAML="${DOTFILES_TOOLS_YAML:-$REPO_ROOT/tools.yaml}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --dry-run)  DRY_RUN=true  ; shift ;;
-    --tool)     SINGLE_TOOL="$2" ; shift 2 ;;
+    --dry-run)          DRY_RUN=true        ; shift ;;
+    --only)             ONLY_TOOLS="$2"     ; shift 2 ;;
+    --only=*)           ONLY_TOOLS="${1#--only=}" ; shift ;;
+    --skip-runtimes)    SKIP_RUNTIMES=true  ; shift ;;
+    --force|-f)         FORCE=true          ; shift ;;
+    --quiet|-q)         QUIET=true          ; shift ;;
+    # 兼容旧 flag（已废弃，保留向后兼容）
+    --skip-mise-runtimes)
+      SKIP_RUNTIMES=true
+      _warn "Flag --skip-mise-runtimes is deprecated, use --skip-runtimes instead"
+      shift ;;
+    --tool)
+      ONLY_TOOLS="$2"
+      _warn "Flag --tool is deprecated, use --only instead"
+      shift 2 ;;
     -h|--help)
-      echo "Usage: $0 [--dry-run] [--tool <name>]"
-      echo "  --dry-run       Show what would be installed without making changes"
-      echo "  --tool <name>   Only process the specified tool"
+      cat <<'EOF'
+Usage: dotfiles sync [options]
+
+Options:
+  --only <tools>      Only process specified tools (comma-separated)
+                      Example: --only git,ripgrep,jq
+  --skip-runtimes     Skip mise-managed runtime installations (java/python/node/rust/cmake)
+  --force, -f         Reinstall tools even if already installed
+  --dry-run           Preview what would be installed, no actual changes
+  --quiet, -q         Only output errors and final summary
+  -h, --help          Show this help message
+
+Examples:
+  dotfiles sync                        # Sync all tools
+  dotfiles sync --only git,ripgrep     # Only sync git and ripgrep
+  dotfiles sync --skip-runtimes        # Skip heavy runtime installs
+  dotfiles sync --dry-run              # Preview changes
+  dotfiles sync --force                # Reinstall everything
+EOF
       exit 0
       ;;
-    *) echo "[WARN] Unknown argument: $1" >&2 ; shift ;;
+    *) _warn "Unknown argument: $1" ; shift ;;
   esac
 done
 
 # ---------------------------------------------------------------------------
-# Dependency check: yq (YAML parser)
+# 日志包装（--quiet 模式下抑制 _info 和 _skip）
 # ---------------------------------------------------------------------------
-_ensure_yq() {
-  if ! command -v yq &>/dev/null; then
-    echo "[INFO] yq not found. Installing yq for YAML parsing..."
-    case "$OS_TYPE" in
-      ubuntu)
-        sudo wget -qO /usr/local/bin/yq \
-          "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64"
-        sudo chmod +x /usr/local/bin/yq
-        ;;
-      macos)
-        brew install yq
-        ;;
-      *)
-        echo "[ERROR] Please install yq manually: https://github.com/mikefarah/yq" >&2
-        exit 1
-        ;;
-    esac
-  fi
-}
+if [[ "$QUIET" == "true" ]]; then
+  _info()  { :; }
+  _skip()  { :; }
+  _section() { :; }
+fi
 
 # ---------------------------------------------------------------------------
-# Logging helpers
+# 文件日志
 # ---------------------------------------------------------------------------
 _log() {
   local level="$1"; shift
@@ -81,15 +120,159 @@ _log() {
   echo "[$timestamp] [$level] $msg" >> "$LOG_FILE"
 }
 
-_info()    { echo "  [INFO]  $*"; _log "INFO"  "$*"; }
-_ok()      { echo "  [✓]     $*"; _log "OK"    "$*"; }
-_skip()    { echo "  [SKIP]  $*"; _log "SKIP"  "$*"; }
-_warn()    { echo "  [WARN]  $*" >&2; _log "WARN"  "$*"; }
-_error()   { echo "  [✗]     $*" >&2; _log "ERROR" "$*"; }
-_section() { echo; echo "━━━ $* ━━━"; }
+# 包装日志函数，同时写文件日志
+_ok_log()    { _ok "$*";    _log "OK"    "$*"; }
+_skip_log()  { _skip "$*";  _log "SKIP"  "$*"; }
+_warn_log()  { _warn "$*";  _log "WARN"  "$*"; }
+_error_log() { _error "$*"; _log "ERROR" "$*"; }
+_info_log()  { _info "$*";  _log "INFO"  "$*"; }
 
 # ---------------------------------------------------------------------------
-# Summary tracking
+# 依赖检查：yq（YAML 解析器）
+# ---------------------------------------------------------------------------
+_ensure_yq() {
+  # Mock 模式：安装一个基于 awk 的 yq stub（不发起网络请求，不依赖外部模块）
+  if [[ "${DOTFILES_TEST_MODE:-0}" == "1" ]]; then
+    if ! command -v yq &>/dev/null; then
+      echo "[MOCK] _ensure_yq: installing yq stub for test mode"
+      local stub_dir="${TMPDIR:-/tmp}/dotfiles_test_$$"
+      mkdir -p "$stub_dir"
+      # 创建一个基于 awk 的 yq stub，支持 sync.sh 使用的查询模式
+      # 注意：STUB 内部不能使用 $BASH_REMATCH（它在子 bash 进程中不可用）
+      cat > "$stub_dir/yq" <<'STUB'
+#!/usr/bin/env bash
+# Minimal yq stub for dotfiles test mode
+# Supports the specific yq e queries used in sync.sh
+
+expr="$2"
+file="$3"
+
+[[ -z "$file" || ! -f "$file" ]] && exit 0
+
+# .tools[].name  →  list all tool names
+if [[ "$expr" == ".tools[].name" ]]; then
+  awk '/^  - name:/{print $3}' "$file"
+  exit 0
+fi
+
+# .tools | length  →  count tools
+if [[ "$expr" == ".tools | length" ]]; then
+  awk '/^  - name:/{c++} END{print c+0}' "$file"
+  exit 0
+fi
+
+# .tools[N].name  →  Nth tool name (0-indexed)
+if [[ "$expr" =~ ^\.tools\[([0-9]+)\]\.name$ ]]; then
+  idx="${BASH_REMATCH[1]}"
+  awk -v idx="$idx" '/^  - name:/{c++; if(c-1==idx) print $3}' "$file"
+  exit 0
+fi
+
+# .tools[] | select(.name == "X") | .FIELD // "DEFAULT"
+# 使用纯 awk 解析 YAML 工具块
+if [[ "$expr" =~ select\(\.name\ ==\ \"([^\"]+)\"\)\ \|\ \. ]]; then
+  # 提取 tool_name
+  tool_name="$(echo "$expr" | sed 's/.*select(\.name == "\([^"]*\)").*/\1/')"
+  # 提取 field_path（去掉 // "default" 部分）
+  field_expr="$(echo "$expr" | sed 's/.*select(\.name == "[^"]*") | \.\(.*\)/\1/')"
+  # 提取 default 值（支持带引号和不带引号的默认值）
+  default_val=""
+  if [[ "$field_expr" == *' // '* ]]; then
+    # 提取 // 后面的默认值（去掉引号）
+    default_val="$(echo "$field_expr" | sed 's/.*\/\/ *"\([^"]*\)".*/\1/' | sed 's/.*\/\/ *\([^ ]*\)/\1/' | tr -d '"')"
+    field_path="$(echo "$field_expr" | sed 's/ \/\/ .*//' | tr -d ' ')"
+  else
+    field_path="$(echo "$field_expr" | tr -d ' ')"
+  fi
+
+  # 用 awk 在 YAML 中找到工具块并提取字段
+  # 策略：找到 "  - name: $tool_name" 行，然后在后续行中查找字段
+  awk -v tool="$tool_name" -v field="$field_path" -v dflt="$default_val" '
+  BEGIN { in_tool=0; found=0; result="" }
+  /^  - name:/ {
+    if ($3 == tool) { in_tool=1 }
+    else if (in_tool) { in_tool=0 }
+  }
+  in_tool && !found {
+    # 处理简单字段（如 deprecated: true）
+    if (field !~ /\./) {
+      if (match($0, "^[[:space:]]+" field ":")) {
+        val = $0
+        sub(/^[[:space:]]*[^:]+:[[:space:]]*/, "", val)
+        gsub(/^["\x27]|["\x27]$/, "", val)
+        if (val == "") val = dflt
+        result = val
+        found = 1
+      }
+    } else {
+      # 处理嵌套字段（如 platforms.ubuntu.method）
+      # 简化：直接搜索最后一个字段名
+      n = split(field, parts, ".")
+      last_field = parts[n]
+      if (match($0, "^[[:space:]]+" last_field ":")) {
+        val = $0
+        sub(/^[[:space:]]*[^:]+:[[:space:]]*/, "", val)
+        gsub(/^["\x27]|["\x27]$/, "", val)
+        if (val == "") val = dflt
+        result = val
+        found = 1
+      }
+    }
+  }
+  END {
+    if (found) print result
+    else print dflt
+  }
+  ' "$file"
+  exit 0
+fi
+
+# .tools[] | select(.name == "mise") | .runtimes | length
+if [[ "$expr" =~ select\(\.name\ ==\ \"([^\"]+)\"\)\ \|\ \.runtimes\ \|\ length ]]; then
+  echo "0"
+  exit 0
+fi
+
+# .tools[] | select(.name == "mise") | .runtimes[N].field
+if [[ "$expr" =~ select\(\.name\ ==\ \"([^\"]+)\"\)\ \|\ \.runtimes\[([0-9]+)\]\.([a-z_]+) ]]; then
+  echo ""
+  exit 0
+fi
+
+# Default: empty
+echo ""
+STUB
+      chmod +x "$stub_dir/yq"
+      export PATH="$stub_dir:$PATH"
+      echo "[MOCK] _ensure_yq: yq stub installed at $stub_dir/yq"
+    fi
+    return 0
+  fi
+
+  _info_log "yq not found. Installing yq for YAML parsing..."
+  case "$OS_TYPE" in
+    ubuntu)
+      local _sudo=""
+      [[ "$(id -u)" -ne 0 ]] && _sudo="sudo"
+      $_sudo wget -qO /usr/local/bin/yq \
+        "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64"
+      $_sudo chmod +x /usr/local/bin/yq
+      ;;
+    macos)
+      brew install yq
+      ;;
+    *)
+      _error_actionable \
+        "yq is required but not installed" \
+        "Unsupported OS: $OS_TYPE" \
+        "Install yq manually: https://github.com/mikefarah/yq"
+      exit 1
+      ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# 摘要追踪
 # ---------------------------------------------------------------------------
 declare -a SUMMARY_OK=()
 declare -a SUMMARY_SKIP=()
@@ -98,108 +281,176 @@ declare -a SUMMARY_DEPRECATED=()
 declare -a SUMMARY_MANUAL=()
 
 # ---------------------------------------------------------------------------
-# Process a single tool entry from tools.yaml
+# 处理单个工具条目
 # ---------------------------------------------------------------------------
 _process_tool() {
   local name="$1"
   local description check_cmd deprecated replaced_by migration_note
   local platform_method platform_install platform_script
+  local platform_script_args platform_install_type platform_binary
 
-  # Read fields from YAML
+  # 从 YAML 读取字段
   description="$(yq e ".tools[] | select(.name == \"$name\") | .description // \"\"" "$TOOLS_YAML")"
   check_cmd="$(yq e ".tools[] | select(.name == \"$name\") | .check_cmd // \"$name\"" "$TOOLS_YAML")"
   deprecated="$(yq e ".tools[] | select(.name == \"$name\") | .deprecated // false" "$TOOLS_YAML")"
   replaced_by="$(yq e ".tools[] | select(.name == \"$name\") | .replaced_by // \"\"" "$TOOLS_YAML")"
   migration_note="$(yq e ".tools[] | select(.name == \"$name\") | .migration_note // \"\"" "$TOOLS_YAML")"
 
-  # Read platform-specific fields
+  # 读取平台特定字段
   platform_method="$(yq e ".tools[] | select(.name == \"$name\") | .platforms.$OS_TYPE.method // \"\"" "$TOOLS_YAML")"
   platform_install="$(yq e ".tools[] | select(.name == \"$name\") | .platforms.$OS_TYPE.install // \"\"" "$TOOLS_YAML")"
   platform_script="$(yq e ".tools[] | select(.name == \"$name\") | .platforms.$OS_TYPE.script // \"\"" "$TOOLS_YAML")"
+  platform_script_args="$(yq e ".tools[] | select(.name == \"$name\") | .platforms.$OS_TYPE.script_args // \"\"" "$TOOLS_YAML")"
+  platform_install_type="$(yq e ".tools[] | select(.name == \"$name\") | .platforms.$OS_TYPE.install_type // \"\"" "$TOOLS_YAML")"
+  platform_binary="$(yq e ".tools[] | select(.name == \"$name\") | .platforms.$OS_TYPE.binary // \"$name\"" "$TOOLS_YAML")"
 
-  echo -n "  ▸ $name"
-  [ -n "$description" ] && echo -n " ($description)"
-  echo
+  _info_log "▸ $name$([ -n "$description" ] && echo " ($description)")"
 
-  # --- Handle deprecated tools ---
-  if [ "$deprecated" = "true" ]; then
+  # --- 处理废弃工具 ---
+  if [[ "$deprecated" == "true" ]]; then
     if pkg_is_installed "$check_cmd"; then
-      _warn "$name is DEPRECATED. $([ -n "$replaced_by" ] && echo "Replaced by: $replaced_by.")"
-      [ -n "$migration_note" ] && _warn "Migration: $migration_note"
+      _warn_log "$name is DEPRECATED.$([ -n "$replaced_by" ] && echo " Replaced by: $replaced_by.")"
+      [[ -n "$migration_note" ]] && _warn_log "Migration: $migration_note"
       SUMMARY_DEPRECATED+=("$name → ${replaced_by:-no replacement}")
 
-      # Auto-install replacement tool if specified and not yet installed
-      if [ -n "$replaced_by" ]; then
+      # 自动安装替代工具（如果未安装）
+      if [[ -n "$replaced_by" ]]; then
         local replacement_check_cmd
         replacement_check_cmd="$(yq e ".tools[] | select(.name == \"$replaced_by\") | .check_cmd // \"$replaced_by\"" "$TOOLS_YAML" 2>/dev/null || echo "$replaced_by")"
 
         if ! pkg_is_installed "$replacement_check_cmd"; then
-          if [ "$DRY_RUN" = "true" ]; then
-            _info "[DRY-RUN] Would auto-install replacement: $replaced_by"
+          if [[ "$DRY_RUN" == "true" ]]; then
+            _info_log "[DRY-RUN] Would auto-install replacement: $replaced_by"
           else
-            _info "Auto-installing replacement tool: $replaced_by"
-            _process_tool "$replaced_by" || true
+            _info_log "Auto-installing replacement tool: $replaced_by"
+            _process_tool "$replaced_by" || true  # non-fatal: replacement install
           fi
         else
-          _info "Replacement tool '$replaced_by' is already installed."
+          _info_log "Replacement tool '$replaced_by' is already installed."
         fi
       fi
     else
-      _skip "$name (deprecated, not installed - skipping)"
+      _skip_log "$name (deprecated, not installed — skipping)"
     fi
     return 0
   fi
 
-  # --- Check if platform is supported ---
-  if [ -z "$platform_method" ]; then
-    _skip "$name (not supported on $OS_TYPE)"
+  # --- 检查平台支持 ---
+  if [[ -z "$platform_method" ]]; then
+    _skip_log "$name (not supported on $OS_TYPE)"
     SUMMARY_SKIP+=("$name (unsupported on $OS_TYPE)")
     return 0
   fi
 
-  # --- Check if already installed ---
-  if pkg_is_installed "$check_cmd"; then
-    _skip "$name (already installed)"
+  # --- 检查是否已安装（--force 时跳过此检查）---
+  if [[ "$FORCE" == "false" ]] && pkg_is_installed "$check_cmd"; then
+    _skip_log "$name (already installed)"
     SUMMARY_SKIP+=("$name")
+    # mise 已安装时仍检查并补装 runtimes
+    if [[ "$name" == "mise" && "$DRY_RUN" == "false" && "$SKIP_RUNTIMES" == "false" ]]; then
+      _install_mise_runtimes
+    fi
     return 0
   fi
 
-  # --- Dry run: just report ---
-  if [ "$DRY_RUN" = "true" ]; then
-    _info "[DRY-RUN] Would install: $name via $platform_method"
+  # --- Dry run：仅报告 ---
+  if [[ "$DRY_RUN" == "true" ]]; then
+    _info_log "[DRY-RUN] Would install: $name via $platform_method"
     SUMMARY_SKIP+=("$name (would install)")
     return 0
   fi
 
-  # --- Install ---
-  _info "Installing $name via $platform_method..."
-  local exit_code=0
+  # --- 安装 ---
+  _info_log "Installing $name via $platform_method..."
+  local rc=0
 
   case "$platform_method" in
     script)
-      pkg_run_script "$platform_script" || exit_code=$?
+      pkg_run_script "$platform_script" "$platform_install_type" "$platform_binary" $platform_script_args || rc=$?
       ;;
     manual)
-      _skip "$name requires manual installation: $platform_install"
+      _skip_log "$name requires manual installation: $platform_install"
       SUMMARY_MANUAL+=("$name: $platform_install")
       return 0
       ;;
     *)
-      pkg_install "$platform_install" "$platform_method" || exit_code=$?
+      pkg_install "$platform_install" "$platform_method" || rc=$?
       ;;
   esac
 
-  if [ "$exit_code" -eq 0 ]; then
-    _ok "$name installed successfully"
+  if [[ "$rc" -eq 0 ]]; then
+    _ok_log "$name installed successfully"
     SUMMARY_OK+=("$name")
+
+    # 安装后：mise runtimes
+    if [[ "$name" == "mise" && "$SKIP_RUNTIMES" == "false" ]]; then
+      _install_mise_runtimes
+    fi
   else
-    _error "$name installation FAILED (exit code: $exit_code)"
+    _error_actionable \
+      "failed to install $name" \
+      "Installation exited with code $rc" \
+      "Retry with: ./dotfiles sync --only $name"
+    _log "ERROR" "$name installation FAILED (exit code: $rc)"
     SUMMARY_FAIL+=("$name")
   fi
 }
 
 # ---------------------------------------------------------------------------
-# Print final summary
+# 安装 mise 管理的运行时
+# ---------------------------------------------------------------------------
+_install_mise_runtimes() {
+  # Mock 模式：跳过所有 mise install 调用
+  if [[ "${DOTFILES_TEST_MODE:-0}" == "1" ]]; then
+    local runtime_count
+    runtime_count="$(yq e '.tools[] | select(.name == "mise") | .runtimes | length' "$TOOLS_YAML" 2>/dev/null || echo 0)"
+    local i=0
+    while [[ "$i" -lt "$runtime_count" ]]; do
+      local rt_name rt_version
+      rt_name="$(yq e ".tools[] | select(.name == \"mise\") | .runtimes[$i].name" "$TOOLS_YAML")"
+      rt_version="$(yq e ".tools[] | select(.name == \"mise\") | .runtimes[$i].version" "$TOOLS_YAML")"
+      echo "[MOCK] would install runtime: ${rt_name}@${rt_version}"
+      i=$(( i + 1 ))
+    done
+    return 0
+  fi
+
+  local runtime_count
+  runtime_count="$(yq e '.tools[] | select(.name == "mise") | .runtimes | length' "$TOOLS_YAML" 2>/dev/null || echo 0)"
+
+  [[ "$runtime_count" -eq 0 ]] && return 0
+
+  _info_log "Installing mise runtimes ($runtime_count declared)..."
+
+  # 确保 mise 在 PATH 中
+  export PATH="$HOME/.local/bin:$PATH"
+
+  local i=0
+  while [[ "$i" -lt "$runtime_count" ]]; do
+    local rt_name rt_version
+    rt_name="$(yq e ".tools[] | select(.name == \"mise\") | .runtimes[$i].name" "$TOOLS_YAML")"
+    rt_version="$(yq e ".tools[] | select(.name == \"mise\") | .runtimes[$i].version" "$TOOLS_YAML")"
+
+    if [[ -z "$rt_name" || "$rt_name" == "null" ]]; then
+      i=$(( i + 1 ))
+      continue
+    fi
+
+    local rt_spec="${rt_name}@${rt_version}"
+    _info_log "  mise: installing $rt_spec ..."
+
+    if mise install "$rt_name@$rt_version" 2>&1 | tee -a "$LOG_FILE"; then
+      _ok_log "  mise runtime installed: $rt_spec"
+    else
+      _warn_log "  mise runtime FAILED: $rt_spec (non-fatal)"  # non-fatal: user can install later
+    fi
+
+    i=$(( i + 1 ))
+  done
+}
+
+# ---------------------------------------------------------------------------
+# 打印最终摘要
 # ---------------------------------------------------------------------------
 _print_summary() {
   echo
@@ -208,22 +459,22 @@ _print_summary() {
   echo "╚══════════════════════════════════════════════════════╝"
   echo
   echo "  ✓  Installed  : ${#SUMMARY_OK[@]}"
-  for t in "${SUMMARY_OK[@]:-}"; do [ -n "$t" ] && echo "       - $t"; done
+  for t in "${SUMMARY_OK[@]:-}"; do [[ -n "$t" ]] && echo "       - $t"; done
 
   echo "  ⊘  Skipped    : ${#SUMMARY_SKIP[@]}"
-  for t in "${SUMMARY_SKIP[@]:-}"; do [ -n "$t" ] && echo "       - $t"; done
+  for t in "${SUMMARY_SKIP[@]:-}"; do [[ -n "$t" ]] && echo "       - $t"; done
 
-  if [ "${#SUMMARY_FAIL[@]}" -gt 0 ]; then
+  if [[ "${#SUMMARY_FAIL[@]}" -gt 0 ]]; then
     echo "  ✗  Failed     : ${#SUMMARY_FAIL[@]}"
     for t in "${SUMMARY_FAIL[@]}"; do echo "       - $t"; done
   fi
 
-  if [ "${#SUMMARY_DEPRECATED[@]}" -gt 0 ]; then
+  if [[ "${#SUMMARY_DEPRECATED[@]}" -gt 0 ]]; then
     echo "  ⚠  Deprecated : ${#SUMMARY_DEPRECATED[@]}"
     for t in "${SUMMARY_DEPRECATED[@]}"; do echo "       - $t"; done
   fi
 
-  if [ "${#SUMMARY_MANUAL[@]}" -gt 0 ]; then
+  if [[ "${#SUMMARY_MANUAL[@]}" -gt 0 ]]; then
     echo "  ✎  Manual     : ${#SUMMARY_MANUAL[@]}"
     for t in "${SUMMARY_MANUAL[@]}"; do echo "       - $t"; done
   fi
@@ -232,47 +483,47 @@ _print_summary() {
   echo "  Log file: $LOG_FILE"
   echo
 
-  # Return non-zero if any failures
-  [ "${#SUMMARY_FAIL[@]}" -eq 0 ]
+  # 有失败则返回非零
+  [[ "${#SUMMARY_FAIL[@]}" -eq 0 ]]
 }
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 main() {
-  echo
-  echo "╔══════════════════════════════════════════════════════╗"
-  echo "║         dotfiles sync - $(date '+%Y-%m-%d %H:%M:%S')         ║"
-  echo "╚══════════════════════════════════════════════════════╝"
+  _banner "dotfiles sync  •  $(date '+%Y-%m-%d %H:%M:%S')"
   echo "  OS      : $OS_TYPE ($OS_ARCH)"
   echo "  WSL     : $IS_WSL"
   echo "  Dry run : $DRY_RUN"
+  echo "  Force   : $FORCE"
   echo "  Config  : $TOOLS_YAML"
+  [[ -n "$ONLY_TOOLS" ]] && echo "  Only    : $ONLY_TOOLS"
 
-  # Ensure yq is available
+  # 确保 yq 可用
   _ensure_yq
 
-  # Initialize package manager (update index)
-  if [ "$DRY_RUN" = "false" ]; then
+  # 初始化包管理器（更新索引）
+  if [[ "$DRY_RUN" == "false" ]]; then
     _section "Initializing package manager"
     pkg_manager_init
   fi
 
-  # Get list of all tool names
+  # 获取工具名列表
   local tool_names
-  if [ -n "$SINGLE_TOOL" ]; then
-    tool_names="$SINGLE_TOOL"
+  if [[ -n "$ONLY_TOOLS" ]]; then
+    # 将逗号分隔转换为换行分隔
+    tool_names="$(echo "$ONLY_TOOLS" | tr ',' '\n')"
   else
     tool_names="$(yq e '.tools[].name' "$TOOLS_YAML")"
   fi
 
   _section "Processing tools"
 
-  # Process each tool; catch errors per-tool so one failure doesn't stop others
+  # 逐工具处理；单个工具失败不阻断其他工具
   while IFS= read -r tool_name; do
-    [ -z "$tool_name" ] && continue
+    [[ -z "$tool_name" ]] && continue
     _process_tool "$tool_name" || {
-      _error "Unexpected error processing tool: $tool_name"
+      _error_log "Unexpected error processing tool: $tool_name"
       SUMMARY_FAIL+=("$tool_name (unexpected error)")
     }
   done <<< "$tool_names"

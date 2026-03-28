@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# =============================================================================
+# run_once_install-tools.sh - Install development tools via tools.yaml
+# =============================================================================
+# Managed by chezmoi. Runs ONCE on first `chezmoi apply`.
+# Re-runs automatically if this file's content changes.
+#
+# To force re-run:
+#   chezmoi state delete-bucket --bucket=scriptState
+#   chezmoi apply
+# =============================================================================
+
+set -euo pipefail
+
+CHEZMOI_SOURCE_DIR="{{ .chezmoi.sourceDir }}"
+SYNC_SCRIPT="$CHEZMOI_SOURCE_DIR/scripts/sync.sh"
+
+echo "[chezmoi] Starting tool installation via tools.yaml..."
+
+if [ ! -f "$SYNC_SCRIPT" ]; then
+  echo "[chezmoi] ERROR: sync.sh not found at $SYNC_SCRIPT" >&2
+  exit 1
+fi
+
+# 测试/CI 环境跳过 mise runtimes（避免 GitHub rate limit）
+# 手动触发时可传入：SKIP_MISE_RUNTIMES=1 chezmoi apply
+SYNC_ARGS=""
+if [ "${SKIP_MISE_RUNTIMES:-0}" = "1" ]; then
+  SYNC_ARGS="--skip-mise-runtimes"
+  echo "[chezmoi] SKIP_MISE_RUNTIMES=1 detected, skipping mise runtimes (java/python/node/rust)"
+fi
+
+bash "$SYNC_SCRIPT" $SYNC_ARGS
+
+echo "[chezmoi] Tool installation complete."

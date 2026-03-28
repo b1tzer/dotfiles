@@ -1,0 +1,164 @@
+# =============================================================================
+# .zshrc - Common Zsh configuration (all platforms)
+# Managed by chezmoi. Edit via: chezmoi edit ~/.zshrc
+# Apply via: chezmoi apply
+# =============================================================================
+
+# Starship prompt
+if command -v starship &>/dev/null; then
+  eval "$(starship init zsh)"
+fi
+
+# ---------------------------------------------------------------------------
+# Environment variables
+# ---------------------------------------------------------------------------
+export EDITOR=vim
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
+# Load local secrets (not committed to git)
+if [ -f "$HOME/.secrets.local.env" ]; then
+  set -a
+  source "$HOME/.secrets.local.env"
+  set +a
+fi
+
+# ---------------------------------------------------------------------------
+# Path additions
+# ---------------------------------------------------------------------------
+# Local bin
+export PATH="$HOME/.local/bin:$PATH"
+
+# mise - polyglot runtime version manager
+if command -v mise &>/dev/null; then
+  eval "$(mise activate zsh)"
+fi
+
+# ---------------------------------------------------------------------------
+# Zsh plugins (standalone, no framework)
+# ---------------------------------------------------------------------------
+# zsh-autosuggestions
+if [ -f /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh ]; then
+  source /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+elif [ -f /opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh ]; then
+  source /opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+fi
+
+# zsh-syntax-highlighting
+if [ -f /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]; then
+  source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+elif [ -f /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]; then
+  source /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+fi
+
+# ---------------------------------------------------------------------------
+# Aliases - Common
+# ---------------------------------------------------------------------------
+alias ll='ls -lah'
+alias la='ls -A'
+alias ..='cd ..'
+alias ...='cd ../..'
+alias grep='grep --color=auto'
+alias df='df -h'
+alias du='du -h'
+
+# Use eza if available, fallback to ls
+if command -v eza &>/dev/null; then
+  alias ls='eza --icons'
+  alias ll='eza -lah --icons'
+  alias lt='eza --tree --icons'
+fi
+
+# Use bat if available
+if command -v bat &>/dev/null; then
+  alias cat='bat --paging=never'
+fi
+
+# Use ripgrep if available
+if command -v rg &>/dev/null; then
+  alias grep='rg'
+fi
+
+# Use fd if available
+if command -v fd &>/dev/null; then
+  alias find='fd'
+fi
+
+# yazi - terminal file manager
+if command -v yazi &>/dev/null; then
+  alias y='yazi'
+fi
+
+# Git shortcuts
+alias gs='git status'
+alias ga='git add'
+alias gc='git commit'
+alias gp='git push'
+alias gl='git pull'
+alias glog='git log --oneline --graph --decorate --all'
+
+# Docker shortcuts
+alias dps='docker ps'
+alias dpa='docker ps -a'
+alias di='docker images'
+alias dex='docker exec -it'
+
+# ---------------------------------------------------------------------------
+# fzf integration
+# ---------------------------------------------------------------------------
+if command -v fzf &>/dev/null; then
+  [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+  export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border'
+  if command -v rg &>/dev/null; then
+    export FZF_DEFAULT_COMMAND='rg --files --hidden --follow --glob "!.git"'
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# Platform-specific configuration
+# ---------------------------------------------------------------------------
+{{ if eq .chezmoi.os "darwin" -}}
+# macOS - Homebrew
+if [ -f /opt/homebrew/bin/brew ]; then
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+elif [ -f /usr/local/bin/brew ]; then
+  eval "$(/usr/local/bin/brew shellenv)"
+fi
+
+# macOS-specific aliases
+alias showfiles='defaults write com.apple.finder AppleShowAllFiles YES; killall Finder'
+alias hidefiles='defaults write com.apple.finder AppleShowAllFiles NO; killall Finder'
+alias flushdns='sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder'
+alias finder='open .'
+alias copy='pbcopy'
+
+# macOS PATH additions
+export PATH="/opt/homebrew/opt/curl/bin:$PATH"
+export PATH="/opt/homebrew/opt/python/libexec/bin:$PATH"
+
+{{ else if eq .chezmoi.os "linux" -}}
+# Ubuntu/Linux-specific aliases
+alias apt-update='sudo apt update && sudo apt upgrade -y'
+alias apt-clean='sudo apt autoremove -y && sudo apt autoclean'
+alias open='xdg-open'
+
+# Clipboard (requires xclip or xsel)
+if command -v xclip &>/dev/null; then
+  alias copy='xclip -selection clipboard'
+  alias paste='xclip -selection clipboard -o'
+elif command -v xsel &>/dev/null; then
+  alias copy='xsel --clipboard --input'
+  alias paste='xsel --clipboard --output'
+fi
+
+# WSL-specific settings
+if grep -qi microsoft /proc/version 2>/dev/null; then
+  export DISPLAY="${DISPLAY:-$(grep -m1 nameserver /etc/resolv.conf | awk '{print $2}'):0}"
+  alias explorer='explorer.exe'
+  alias open='explorer.exe'
+fi
+
+# Linux PATH additions
+export PATH="$HOME/.local/bin:$PATH"
+
+{{ end -}}

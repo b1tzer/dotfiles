@@ -72,6 +72,114 @@ dotfiles/
 
 ---
 
+## 新手入门
+
+> 如果你是第一次接触这个项目，从这里开始。
+
+### 这个项目是做什么的？
+
+你是否遇到过这些情况：
+
+- 换了新电脑，要花半天重新装工具、配 git、调 shell
+- 公司机器和家里机器的环境不一致，alias 记不住
+- 不小心把 GitHub Token 提交到了 Git 仓库
+
+这个项目解决的就是这些问题。**一条命令，在任何新机器上还原你的完整开发环境。**
+
+---
+
+### 第一步：Fork 这个仓库
+
+点击 GitHub 右上角的 **Fork**，把仓库复制到你自己的账号下。
+
+> 为什么要 Fork？因为你需要把自己的配置（工具列表、dotfiles）提交到 Git，所以必须有一个属于你自己的仓库。
+
+---
+
+### 第二步：克隆到本地
+
+```bash
+git clone https://github.com/<你的用户名>/dotfiles.git ~/dotfiles
+cd ~/dotfiles
+```
+
+---
+
+### 第三步：填写你的个人信息
+
+运行初始化向导，填写 git 用户名、邮箱等信息：
+
+```bash
+./bin/dotfiles sync
+```
+
+首次运行时会自动引导你完成：
+1. 检测当前操作系统（Ubuntu / macOS / Windows WSL）
+2. 填写 `git name` 和 `git email`（写入本地，不会提交到 Git）
+3. 安装 `tools.yaml` 中声明的所有工具
+4. 通过 chezmoi 将 dotfiles 链接到 `$HOME`
+
+---
+
+### 第四步：重载 shell
+
+```bash
+exec $SHELL
+```
+
+完成！你的终端现在应该已经有了 starship 提示符、eza、bat 等工具。
+
+---
+
+### 换新机器时怎么做？
+
+```bash
+# 在新机器上，只需要这一条命令：
+git clone https://github.com/<你的用户名>/dotfiles.git ~/dotfiles && cd ~/dotfiles && ./bin/dotfiles sync
+```
+
+---
+
+### 想修改工具列表？
+
+编辑 `tools.yaml`，添加或删除工具，然后：
+
+```bash
+./bin/dotfiles sync        # 同步所有工具
+# 或者只同步新加的工具：
+./bin/dotfiles sync --only <工具名>
+```
+
+---
+
+### 想修改 shell 配置（.zshrc）？
+
+```bash
+# 编辑模板文件
+vim ~/dotfiles/dot_zshrc.tmpl
+
+# 应用到 $HOME/.zshrc
+chezmoi apply
+
+# 重载
+exec $SHELL
+```
+
+---
+
+### 常用命令速查
+
+| 场景 | 命令 |
+|------|------|
+| 新机器初始化 | `./bin/dotfiles sync` |
+| 拉取最新配置并同步 | `./bin/dotfiles update` |
+| 检查环境是否正常 | `./bin/dotfiles doctor` |
+| 只装工具，不动 dotfiles | `./bin/dotfiles sync --tools` |
+| 只链接 dotfiles，不装工具 | `./bin/dotfiles sync --dotfiles` |
+| 预览会做什么（不实际执行） | `./bin/dotfiles sync --dry-run` |
+
+---
+
 ## Quick Start
 
 ### 新机器初始化

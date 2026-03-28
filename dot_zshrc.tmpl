@@ -54,48 +54,12 @@ fi
 # ---------------------------------------------------------------------------
 # Aliases - Common
 # ---------------------------------------------------------------------------
-alias ll='ls -lah'
-alias la='ls -A'
-alias ..='cd ..'
-alias ...='cd ../..'
-alias grep='grep --color=auto'
 alias df='df -h'
-alias du='du -h'
-
-# Use eza if available, fallback to ls
-if command -v eza &>/dev/null; then
-  alias ls='eza --icons'
-  alias ll='eza -lah --icons'
-  alias lt='eza --tree --icons'
-fi
-
-# Use bat if available
-if command -v bat &>/dev/null; then
-  alias cat='bat --paging=never'
-fi
-
-# Use ripgrep if available
-if command -v rg &>/dev/null; then
-  alias grep='rg'
-fi
-
-# Use fd if available
-if command -v fd &>/dev/null; then
-  alias find='fd'
-fi
 
 # yazi - terminal file manager
 if command -v yazi &>/dev/null; then
   alias y='yazi'
 fi
-
-# Git shortcuts
-alias gs='git status'
-alias ga='git add'
-alias gc='git commit'
-alias gp='git push'
-alias gl='git pull'
-alias glog='git log --oneline --graph --decorate --all'
 
 # Docker shortcuts
 alias dps='docker ps'
@@ -162,3 +126,8 @@ fi
 export PATH="$HOME/.local/bin:$PATH"
 
 {{ end -}}
+
+# ---------------------------------------------------------------------------
+# Aliases（统一由 dot_aliases.sh 管理）
+# ---------------------------------------------------------------------------
+[[ -f ~/.aliases.sh ]] && source ~/.aliases.sh

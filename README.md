@@ -3,7 +3,7 @@
 One command to set up any new machine. Git-tracked, platform-aware, secret-safe.
 
 ```bash
-git clone <your-repo-url> ~/dotfiles && cd ~/dotfiles && ./bin/dotfiles sync
+curl -fsSL https://raw.githubusercontent.com/<你的用户名>/dotfiles/main/install.sh | sh
 ```
 
 ---
@@ -96,38 +96,35 @@ dotfiles/
 
 ---
 
-### 第二步：克隆到本地
+### 第二步：一键安装
+
+运行以下命令，自动完成 clone、环境配置和工具安装：
 
 ```bash
-git clone https://github.com/<你的用户名>/dotfiles.git ~/dotfiles
-cd ~/dotfiles
+curl -fsSL https://raw.githubusercontent.com/<你的用户名>/dotfiles/main/install.sh | sh
 ```
+
+安装脚本会自动完成：
+1. 将仓库 clone 到 `~/.dotfiles`
+2. 将 `dotfiles` 命令写入 `~/.zshrc` / `~/.bashrc`，使其全局可用
+3. 检测当前操作系统（Ubuntu / macOS / Windows WSL）
+4. 安装 `tools.yaml` 中声明的所有工具
+5. 通过 chezmoi 将 dotfiles 链接到 `$HOME`
+
+> **本地执行（已 clone 的情况）：**
+> ```bash
+> bash ~/.dotfiles/install.sh
+> ```
 
 ---
 
-### 第三步：填写你的个人信息
-
-运行初始化向导，填写 git 用户名、邮箱等信息：
-
-```bash
-./bin/dotfiles sync
-```
-
-首次运行时会自动引导你完成：
-1. 检测当前操作系统（Ubuntu / macOS / Windows WSL）
-2. 填写 `git name` 和 `git email`（写入本地，不会提交到 Git）
-3. 安装 `tools.yaml` 中声明的所有工具
-4. 通过 chezmoi 将 dotfiles 链接到 `$HOME`
-
----
-
-### 第四步：重载 shell
+### 第三步：重载 shell
 
 ```bash
 exec $SHELL
 ```
 
-完成！你的终端现在应该已经有了 starship 提示符、eza、bat 等工具。
+完成！你的终端现在应该已经有了 starship 提示符、eza、bat 等工具，并且可以直接使用 `dotfiles` 命令。
 
 ---
 
@@ -135,7 +132,7 @@ exec $SHELL
 
 ```bash
 # 在新机器上，只需要这一条命令：
-git clone https://github.com/<你的用户名>/dotfiles.git ~/dotfiles && cd ~/dotfiles && ./bin/dotfiles sync
+curl -fsSL https://raw.githubusercontent.com/<你的用户名>/dotfiles/main/install.sh | sh
 ```
 
 ---
@@ -182,25 +179,41 @@ exec $SHELL
 
 ## Quick Start
 
-### 新机器初始化
+### 新机器初始化（推荐）
 
 ```bash
-# 1. 克隆 dotfiles 仓库
-git clone https://github.com/yourname/dotfiles.git ~/dotfiles
-cd ~/dotfiles
+# 一键安装：clone + 写入 PATH + 安装工具 + 链接 dotfiles
+curl -fsSL https://raw.githubusercontent.com/<你的用户名>/dotfiles/main/install.sh | sh
 
-# 2. 全量同步（检测 OS、安装工具、链接 dotfiles）
-./bin/dotfiles sync
-
-# 3. 重载 shell
+# 重载 shell
 exec $SHELL
+```
+
+安装完成后，`dotfiles` 命令即可全局使用：
+
+```bash
+dotfiles sync      # 同步工具和配置
+dotfiles update    # 拉取最新配置并同步
+dotfiles doctor    # 检查环境健康状态
+```
+
+### 安装选项
+
+```bash
+# 仅 clone，不运行 sync（手动控制安装节奏）
+curl -fsSL <install-url> | sh -s -- --no-sync
+
+# 指定自定义安装目录（默认 ~/.dotfiles）
+curl -fsSL <install-url> | sh -s -- --dir ~/my-dotfiles
+
+# 本地执行（已有仓库时）
+bash ~/.dotfiles/install.sh
 ```
 
 ### 同步最新配置到已有机器
 
 ```bash
-cd ~/dotfiles
-./bin/dotfiles update          # git pull --ff-only + sync
+dotfiles update          # git pull --ff-only + sync
 ```
 
 ### 诊断环境健康状态
@@ -241,7 +254,7 @@ cd ~/dotfiles
 ### 当前已配置工具
 
 | 工具 | 说明 | Ubuntu | macOS | Windows |
-|------|------|--------|-------|---------|
+|------|------|--------|-------|------|
 | zsh | Z Shell | apt | brew | manual (WSL) |
 | starship | 跨 shell 提示符 | script | brew | winget |
 | git | 版本控制 | apt | brew | winget |
@@ -260,7 +273,21 @@ cd ~/dotfiles
 | curl / wget | 网络下载工具 | apt | brew | — |
 | ghostty | 终端模拟器 | — | brew cask | — |
 | iterm2 | macOS 终端替代品 | — | brew cask | — |
-
+| **lazygit** | 终端 Git TUI | apt | brew | winget |
+| **delta** | git diff 语法高亮增强 | GitHub release | brew | winget |
+| git-lfs | Git 大文件存储 | apt | brew | winget |
+| **btop** | 现代 top/htop 替代品 | apt | brew | winget |
+| dust | 直观磁盘使用分析（du 替代） | GitHub release | brew | winget |
+| procs | 现代 ps 替代品 | GitHub release | brew | winget |
+| **xh** | 现代 HTTP 客户端（curl 友好替代） | GitHub release | brew | winget |
+| dog | 现代 DNS 查询工具（dig 替代） | GitHub release | brew | — |
+| bandwhich | 终端带宽监控 | GitHub release | brew | winget |
+| **zoxide** | 智能 cd（记忆常用目录） | script | brew | winget |
+| **atuin** | shell 历史记录增强（跨机器同步） | script | brew | winget |
+| **tealdeer** | tldr 的 Rust 重写版（命令：`tldr`） | GitHub release | brew | winget |
+| navi | 交互式 cheatsheet 工具 | GitHub release | brew | winget |
+| tokei | 代码行数统计 | GitHub release | brew | winget |
+| hyperfine | 命令行基准测试工具 | GitHub release | brew | winget |
 **mise 管理的运行时：**
 
 | 运行时 | 版本 |
@@ -444,6 +471,78 @@ secrets.template.env   ← 已提交到 Git（仅占位符）
 - **pre-commit hook** 在每次提交前扫描常见敏感信息模式
 - 配置模板使用 `{{PLACEHOLDER}}` 语法 — 真实值保留在本地
 - 紧急情况绕过 hook：`git commit --no-verify`（谨慎使用）
+
+---
+
+## Alias 配置（`dot_aliases.sh`）
+
+本项目通过 `dot_aliases.sh` 统一管理所有 alias，chezmoi 将其链接到 `~/.aliases.sh`，并在 `~/.zshrc` 中自动加载。
+
+### 现代命令替代
+
+| Alias | 替代命令 | 依赖工具 | 说明 |
+|-------|---------|---------|------|
+| `ls` | `eza --color=auto --group-directories-first` | eza | 带颜色和目录优先排序 |
+| `ll` | `eza -lh --git` | eza | 详细列表，显示 git 状态 |
+| `la` | `eza -lah --git` | eza | 含隐藏文件的详细列表 |
+| `lt` | `eza --tree` | eza | 树形目录视图 |
+| `cat` | `bat --paging=never` | bat | 带语法高亮的文件查看 |
+| `grep` | `rg` | ripgrep | 快速全文搜索 |
+| `find` | `fd` | fd | 用户友好的文件查找 |
+| `du` | `dust` | dust | 直观的磁盘使用分析 |
+| `top` | `btop` | btop | 现代系统监控 |
+| `ps` | `procs` | procs | 现代进程查看 |
+| `z <dir>` | `zoxide <dir>` | zoxide | 智能跳转到常用目录 |
+| `zi` | `zoxide query -i` | zoxide + fzf | 交互式目录跳转 |
+
+> 所有替代 alias 均使用 `command -v` 检测工具是否已安装，未安装时自动跳过，不影响 shell 启动。
+
+### Git 快捷 alias
+
+| Alias | 完整命令 | 说明 |
+|-------|---------|------|
+| `g` | `git` | git 缩写 |
+| `gs` | `git status` | 查看工作区状态 |
+| `ga` | `git add` | 暂存文件 |
+| `gc` | `git commit` | 提交 |
+| `gp` | `git push` | 推送 |
+| `gl` | `git pull` | 拉取 |
+| `gd` | `git diff`（delta 增强） | 查看差异，若 delta 已安装自动启用语法高亮 |
+| `glog` | `git log --oneline --color --graph --decorate` | 美化的提交历史图 |
+| `lg` | `lazygit` | 打开 lazygit TUI（需已安装） |
+
+### 目录导航 alias
+
+| Alias | 命令 | 说明 |
+|-------|------|------|
+| `..` | `cd ..` | 返回上一级 |
+| `...` | `cd ../..` | 返回两级 |
+| `....` | `cd ../../..` | 返回三级 |
+| `~` | `cd ~` | 回到 Home |
+| `dotfiles` | `cd ~/dotfiles` | 快速进入 dotfiles 目录 |
+
+### 系统操作 alias / 函数
+
+| Alias | 说明 |
+|-------|------|
+| `reload` | 重载当前 shell（`exec $SHELL`） |
+| `path` | 格式化打印 `$PATH`，每行一个 |
+| `myip` | 查询本机公网 IP |
+| `ports` | 列出当前监听端口 |
+| `mkcd <dir>` | 创建目录并立即进入 |
+
+### 修改 alias
+
+```bash
+# 编辑 alias 文件
+vim ~/dotfiles/dot_aliases.sh
+
+# 应用到 $HOME
+chezmoi apply
+
+# 重载 shell 使其生效
+reload
+```
 
 ---
 

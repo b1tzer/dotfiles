@@ -289,3 +289,226 @@ tools:
       macos:
         method: brew
         install: "--cask iterm2"
+
+  # ---------------------------------------------------------------------------
+  # Git Workflow Enhancement
+  # ---------------------------------------------------------------------------
+  - name: lazygit
+    description: "Terminal UI for git commands"
+    platforms:
+      ubuntu:
+        method: apt
+        install: lazygit
+      macos:
+        method: brew
+        install: lazygit
+      windows:
+        method: winget
+        install: JesseDuffield.lazygit
+
+  - name: delta
+    description: "A syntax-highlighting pager for git, diff, and grep output"
+    check_cmd: delta
+    platforms:
+      ubuntu:
+        method: apt
+        install: git-delta
+      macos:
+        method: brew
+        install: git-delta
+      windows:
+        method: winget
+        install: dandavison.delta
+
+  - name: git-lfs
+    description: "Git extension for versioning large files"
+    check_cmd: git-lfs
+    platforms:
+      ubuntu:
+        method: apt
+        install: git-lfs
+      macos:
+        method: brew
+        install: git-lfs
+      windows:
+        method: winget
+        install: GitHub.GitLFS
+
+  # ---------------------------------------------------------------------------
+  # System Monitoring & Process Management
+  # ---------------------------------------------------------------------------
+  - name: btop
+    description: "Resource monitor - modern top/htop replacement"
+    platforms:
+      ubuntu:
+        method: apt
+        install: btop
+      macos:
+        method: brew
+        install: btop
+      windows:
+        method: winget
+        install: aristocratos.btop4win
+
+  - name: dust
+    description: "A more intuitive version of du written in rust"
+    platforms:
+      ubuntu:
+        method: script
+        script: "https://github.com/bootandy/dust/releases/latest/download/dust-x86_64-unknown-linux-musl.tar.gz"
+        install_type: tar_binary
+        binary: dust
+      macos:
+        method: brew
+        install: dust
+      windows:
+        method: winget
+        install: bootandy.dust
+
+  - name: procs
+    description: "A modern replacement for ps written in Rust"
+    platforms:
+      ubuntu:
+        method: script
+        script: "https://github.com/dalance/procs/releases/latest/download/procs-v0.14.9-x86_64-linux.zip"
+        install_type: zip_binary
+        binary: procs
+      macos:
+        method: brew
+        install: procs
+      windows:
+        method: winget
+        install: dalance.procs
+
+  # ---------------------------------------------------------------------------
+  # Network Debugging
+  # ---------------------------------------------------------------------------
+  - name: xh
+    description: "Friendly and fast tool for sending HTTP requests (httpie alternative)"
+    platforms:
+      ubuntu:
+        method: script
+        script: "https://github.com/ducaale/xh/releases/latest/download/xh-x86_64-unknown-linux-musl.tar.gz"
+        install_type: tar_binary
+        binary: xh
+      macos:
+        method: brew
+        install: xh
+      windows:
+        method: winget
+        install: ducaale.xh
+
+  - name: dog
+    description: "A command-line DNS client (dig replacement)"
+    platforms:
+      ubuntu:
+        method: script
+        script: "https://github.com/ogham/dog/releases/latest/download/dog-v0.1.0-x86_64-unknown-linux-gnu.zip"
+        install_type: zip_binary
+        binary: dog
+      macos:
+        method: brew
+        install: dog
+
+  - name: bandwhich
+    description: "Terminal bandwidth utilization tool"
+    platforms:
+      ubuntu:
+        method: script
+        script: "https://github.com/imsnif/bandwhich/releases/latest/download/bandwhich-v0.23.1-x86_64-unknown-linux-musl.tar.gz"
+        install_type: tar_binary
+        binary: bandwhich
+      macos:
+        method: brew
+        install: bandwhich
+      windows:
+        method: winget
+        install: imsnif.bandwhich
+
+  # ---------------------------------------------------------------------------
+  # Developer Productivity
+  # ---------------------------------------------------------------------------
+  - name: zoxide
+    description: "A smarter cd command, inspired by z and autojump"
+    platforms:
+      ubuntu:
+        method: apt
+        install: zoxide
+      macos:
+        method: brew
+        install: zoxide
+      windows:
+        method: winget
+        install: ajeetdsouza.zoxide
+
+  - name: atuin
+    description: "Magical shell history - sync, search and backup shell history"
+    platforms:
+      ubuntu:
+        method: script
+        script: "https://setup.atuin.sh"
+        script_args: ""
+      macos:
+        method: brew
+        install: atuin
+      windows:
+        method: winget
+        install: atuinsh.atuin
+
+  - name: tealdeer
+    description: "A very fast implementation of tldr in Rust (command: tldr)"
+    check_cmd: tldr
+    platforms:
+      ubuntu:
+        method: script
+        script: "https://github.com/dbrgn/tealdeer/releases/latest/download/tealdeer-linux-x86_64-musl"
+        install_type: single_binary
+        binary: tldr
+      macos:
+        method: brew
+        install: tealdeer
+      windows:
+        method: winget
+        install: dbrgn.tealdeer
+
+  - name: navi
+    description: "An interactive cheatsheet tool for the command-line"
+    platforms:
+      ubuntu:
+        method: script
+        script: "https://raw.githubusercontent.com/denisidoro/navi/master/scripts/install"
+        script_args: ""
+      macos:
+        method: brew
+        install: navi
+      windows:
+        method: winget
+        install: denisidoro.navi
+
+  - name: tokei
+    description: "Count your code, quickly"
+    platforms:
+      ubuntu:
+        method: script
+        script: "https://github.com/XAMPPRocky/tokei/releases/latest/download/tokei-x86_64-unknown-linux-musl.tar.gz"
+        install_type: tar_binary
+        binary: tokei
+      macos:
+        method: brew
+        install: tokei
+      windows:
+        method: winget
+        install: XAMPPRocky.tokei
+
+  - name: hyperfine
+    description: "A command-line benchmarking tool"
+    platforms:
+      ubuntu:
+        method: apt
+        install: hyperfine
+      macos:
+        method: brew
+        install: hyperfine
+      windows:
+        method: winget
+        install: sharkdp.hyperfine

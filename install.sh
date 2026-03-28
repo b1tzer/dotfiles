@@ -36,7 +36,7 @@ _step()  { printf '\n\033[1m  ▶  %s\033[0m\n' "$*"; }
 # -----------------------------------------------------------------------------
 # 默认配置（可通过参数覆盖）
 # -----------------------------------------------------------------------------
-DOTFILES_REPO="${DOTFILES_REPO:-__DOTFILES_REPO__}"
+DOTFILES_REPO="${DOTFILES_REPO:-https://github.com/b1tzer/dotfiles}"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"  # 安装目录
 NO_SYNC=false                               # 跳过 dotfiles sync
 NO_SHELL_SETUP=false                        # 跳过写入 shell 配置

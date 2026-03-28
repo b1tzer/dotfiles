@@ -12,11 +12,57 @@
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$HOOK_DIR/.." && pwd)"
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null | tr -d '\n' || echo "$HOOK_DIR/..")"
+
+if [[ ! -f "$REPO_ROOT/lib/secret_check.sh" ]]; then
+  REPO_ROOT="$(cd "$HOOK_DIR/.." && pwd)"
+fi
 
 # Source the secret check library
 # shellcheck source=lib/secret_check.sh
 source "$REPO_ROOT/lib/secret_check.sh"
+
+# -----------------------------------------------------------------------------
+# Auto-fill placeholders
+# -----------------------------------------------------------------------------
+fill_placeholders() {
+  local repo_url github_username changed=0
+  
+  repo_url="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)"
+  
+  if [[ -z "$repo_url" ]]; then
+    echo "[pre-commit] ⚠ No remote 'origin' found, skipping placeholder fill"
+    return 0
+  fi
+  
+  if [[ "$repo_url" =~ github\.com[/:]([^/]+) ]]; then
+    github_username="${BASH_REMATCH[1]}"
+  else
+    echo "[pre-commit] ⚠ Cannot extract username from remote URL, skipping"
+    return 0
+  fi
+  
+  for file in install.sh README.md; do
+    filepath="$REPO_ROOT/$file"
+    if [[ -f "$filepath" ]]; then
+      if grep -q "__DOTFILES_REPO__\|__GITHUB_USERNAME__" "$filepath" 2>/dev/null; then
+        sed -i "s|__DOTFILES_REPO__|${repo_url}|g" "$filepath"
+        sed -i "s|__GITHUB_USERNAME__|${github_username}|g" "$filepath"
+        git -C "$REPO_ROOT" add "$file"
+        changed=1
+        echo "[pre-commit] → Filled placeholders in $file"
+      fi
+    fi
+  done
+  
+  if [[ "$changed" -eq 1 ]]; then
+    echo "[pre-commit] ✓ Placeholders filled and staged"
+  fi
+}
+
+echo "[pre-commit] Running pre-commit checks..."
+
+fill_placeholders
 
 echo "[pre-commit] Running secret scan on staged files..."
 

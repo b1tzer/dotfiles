@@ -3,7 +3,7 @@
 One command to set up any new machine. Git-tracked, platform-aware, secret-safe.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<你的用户名>/dotfiles/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/__GITHUB_USERNAME__/dotfiles/main/install.sh | sh
 ```
 
 ---
@@ -101,7 +101,7 @@ dotfiles/
 运行以下命令，自动完成 clone、环境配置和工具安装：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<你的用户名>/dotfiles/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/__GITHUB_USERNAME__/dotfiles/main/install.sh | sh
 ```
 
 安装脚本会自动完成：
@@ -132,7 +132,7 @@ exec $SHELL
 
 ```bash
 # 在新机器上，只需要这一条命令：
-curl -fsSL https://raw.githubusercontent.com/<你的用户名>/dotfiles/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/__GITHUB_USERNAME__/dotfiles/main/install.sh | sh
 ```
 
 ---
@@ -183,7 +183,7 @@ exec $SHELL
 
 ```bash
 # 一键安装：clone + 写入 PATH + 安装工具 + 链接 dotfiles
-curl -fsSL https://raw.githubusercontent.com/<你的用户名>/dotfiles/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/__GITHUB_USERNAME__/dotfiles/main/install.sh | sh
 
 # 重载 shell
 exec $SHELL

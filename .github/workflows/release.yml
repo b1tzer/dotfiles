@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Inject placeholders
+        run: |
+          REPO_URL="https://github.com/${{ github.repository }}.git"
+          GITHUB_USERNAME="${{ github.repository_owner }}"
+          
+          sed -i "s|__DOTFILES_REPO__|${REPO_URL}|g" install.sh
+          sed -i "s|__GITHUB_USERNAME__|${GITHUB_USERNAME}|g" README.md
+          
+          echo "Injected repository URL: ${REPO_URL}"
+          echo "Injected GitHub username: ${GITHUB_USERNAME}"
+
+      - name: Upload files to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            install.sh
+            README.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

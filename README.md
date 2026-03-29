@@ -3,7 +3,7 @@
 One command to set up any new machine. Git-tracked, platform-aware, secret-safe.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/b1tzer/dotfiles/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/b1tzer/dotfiles/main/install.sh | bash
 ```
 
 ---
@@ -99,7 +99,7 @@ dotfiles/
 运行以下命令，自动完成 clone、环境配置和工具安装：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/b1tzer/dotfiles/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/b1tzer/dotfiles/main/install.sh | bash
 ```
 
 安装脚本会自动完成：
@@ -130,7 +130,7 @@ exec $SHELL
 
 ```bash
 # 在新机器上，只需要这一条命令：
-curl -fsSL https://raw.githubusercontent.com/b1tzer/dotfiles/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/b1tzer/dotfiles/main/install.sh | bash
 ```
 
 ---
@@ -181,7 +181,7 @@ exec $SHELL
 
 ```bash
 # 一键安装：clone + 写入 PATH + 安装工具 + 链接 dotfiles
-curl -fsSL https://raw.githubusercontent.com/b1tzer/dotfiles/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/b1tzer/dotfiles/main/install.sh | bash
 
 # 重载 shell
 exec $SHELL
@@ -199,10 +199,10 @@ dotfiles doctor    # 检查环境健康状态
 
 ```bash
 # 仅 clone，不运行 sync（手动控制安装节奏）
-curl -fsSL <install-url> | sh -s -- --no-sync
+curl -fsSL <install-url> | bash -s -- --no-sync
 
 # 指定自定义安装目录（默认 ~/.dotfiles）
-curl -fsSL <install-url> | sh -s -- --dir ~/my-dotfiles
+curl -fsSL <install-url> | bash -s -- --dir ~/my-dotfiles
 
 # 本地执行（已有仓库时）
 bash ~/.dotfiles/install.sh

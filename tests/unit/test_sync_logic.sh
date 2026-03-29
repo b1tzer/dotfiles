@@ -17,50 +17,8 @@ SAMPLE_YAML="$FIXTURES_DIR/sample_tools.yaml"
 _PASS=0
 _FAIL=0
 
-_assert_eq() {
-  local desc="$1"
-  local expected="$2"
-  local actual="$3"
-  if [[ "$expected" == "$actual" ]]; then
-    echo "  [PASS] $desc"
-    _PASS=$(( _PASS + 1 ))
-  else
-    echo "  [FAIL] $desc" >&2
-    echo "         expected: '$expected'" >&2
-    echo "         actual:   '$actual'" >&2
-    _FAIL=$(( _FAIL + 1 ))
-  fi
-}
-
-_assert_contains() {
-  local desc="$1"
-  local haystack="$2"
-  local needle="$3"
-  if [[ "$haystack" == *"$needle"* ]]; then
-    echo "  [PASS] $desc"
-    _PASS=$(( _PASS + 1 ))
-  else
-    echo "  [FAIL] $desc" >&2
-    echo "         expected to contain: '$needle'" >&2
-    echo "         actual: '$haystack'" >&2
-    _FAIL=$(( _FAIL + 1 ))
-  fi
-}
-
-_assert_exit_code() {
-  local desc="$1"
-  local expected_code="$2"
-  local actual_code="$3"
-  if [[ "$expected_code" == "$actual_code" ]]; then
-    echo "  [PASS] $desc (exit code: $actual_code)"
-    _PASS=$(( _PASS + 1 ))
-  else
-    echo "  [FAIL] $desc" >&2
-    echo "         expected exit code: $expected_code" >&2
-    echo "         actual exit code:   $actual_code" >&2
-    _FAIL=$(( _FAIL + 1 ))
-  fi
-}
+# shellcheck source=tests/lib/assert.sh
+source "$TESTS_DIR/../lib/assert.sh"
 
 echo
 echo "=== test_sync_logic.sh ==="

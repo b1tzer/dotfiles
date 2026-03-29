@@ -29,45 +29,43 @@ curl -fsSL https://raw.githubusercontent.com/b1tzer/dotfiles/main/install.sh | s
 ```
 dotfiles/
 ├── bin/
-│   └── dotfiles              # ← 入口脚本（子命令路由器）
+│   └── dotfiles                      # ← 入口脚本（子命令路由器，含 cache 逻辑）
 │
-├── tools.yaml                # ← 声明所有工具
-├── secrets.template.env      # ← 敏感配置模板（已提交）
-├── .gitignore                # ← 排除 secrets.local.env 等敏感文件
-│
-├── lib/
-│   ├── logging.sh            # 统一日志模块（NO_COLOR 支持）
-│   ├── detect_os.sh          # OS 检测模块（OS_TYPE/OS_ARCH/IS_WSL）
-│   └── pkg_manager.sh        # 包管理器抽象层（apt/brew + 缓存）
+├── tools.yaml                        # ← 声明所有工具
+├── secrets.template.env              # ← 敏感配置模板（已提交）
+├── .gitignore                        # ← 排除 secrets.local.env 等敏感文件
 │
 ├── scripts/
-│   ├── sync.sh               # 工具安装引擎
-│   ├── link_dotfiles.sh      # dotfiles 软链接管理
-│   ├── doctor.sh             # 环境健康检查
-│   ├── cache.sh              # 下载缓存管理
-│   └── init_secrets.sh       # 交互式 secrets 向导
+│   ├── sync.sh                       # 工具安装引擎
+│   ├── link_dotfiles.sh              # dotfiles 软链接管理
+│   └── doctor.sh                     # 环境健康检查
 │
-├── dotfiles/                 # dotfiles 源文件目录
-│   ├── .zshrc
-│   ├── .vimrc
-│   └── .config/
-│       └── starship.toml
+├── dot_zshrc.tmpl                    # chezmoi 模板 → ~/.zshrc
+├── dot_gitconfig.tmpl                # chezmoi 模板 → ~/.gitconfig
+├── dot_vimrc                         # chezmoi 源文件 → ~/.vimrc
+├── dot_aliases.sh                    # chezmoi 源文件 → ~/.aliases.sh
+├── .chezmoi.toml.tmpl                # chezmoi 配置模板
+├── run_once_install-tools.sh.tmpl    # chezmoi 首次运行：安装工具
+├── run_once_setup-secrets.sh.tmpl    # chezmoi 首次运行：初始化 secrets
 │
 ├── tests/
-│   ├── unit/                 # 单元测试（无网络，< 30s）
+│   ├── lib/
+│   │   └── assert.sh                 # 共享断言库
+│   ├── unit/                         # 单元测试（无网络，< 30s）
 │   │   ├── test_detect_os.sh
 │   │   ├── test_logging.sh
 │   │   └── test_sync_logic.sh
-│   ├── integration/          # 集成测试（使用缓存）
+│   ├── integration/                  # 集成测试（使用缓存）
 │   │   └── test_full_sync.sh
 │   └── fixtures/
 │       ├── mock_pkg_manager.sh
+│       ├── yq_stub.sh
 │       └── sample_tools.yaml
 │
 ├── hooks/
-│   └── pre-commit            # Git hook：提交前阻断敏感信息
+│   └── pre-commit                    # Git hook：提交前阻断敏感信息
 │
-└── bootstrap.sh              # DEPRECATED: use ./bin/dotfiles sync instead
+└── bootstrap.sh                      # DEPRECATED: use ./bin/dotfiles sync instead
 ```
 
 ---
@@ -387,7 +385,7 @@ dot_vimrc               →                →  ~/.vimrc
 {{ .chezmoi.os }}              # 操作系统类型
 ```
 
-初始化时 `bootstrap.sh` 会引导填写 `chezmoi.toml`：
+初始化时 `.chezmoi.toml.tmpl` 会引导填写 `chezmoi.toml`：
 
 ```toml
 [data]
@@ -427,14 +425,11 @@ secrets.template.env   ← 已提交到 Git（仅占位符）
 
 ### 在新机器上初始化 Secrets
 
-```bash
-./scripts/init_secrets.sh
-```
+chezmoi 首次运行时会自动执行 `run_once_setup-secrets.sh.tmpl`，引导填写所有必要的 secrets。
 
-### 检查所有必要 Secrets 是否已设置
-
+也可手动触发：
 ```bash
-./scripts/init_secrets.sh --check
+chezmoi apply
 ```
 
 ### 添加新 Secret
@@ -444,7 +439,7 @@ secrets.template.env   ← 已提交到 Git（仅占位符）
    MY_API_KEY=CHANGE_ME|该 key 的用途说明|yes
    ```
 2. 提交模板变更
-3. 在每台机器上运行 `./scripts/init_secrets.sh` 填入真实值
+3. 在每台机器上重新运行 `chezmoi apply` 触发 secrets 向导
 
 ---
 
@@ -453,15 +448,15 @@ secrets.template.env   ← 已提交到 Git（仅占位符）
 ```
 机器 A                       Git Remote               机器 B
 ──────                       ──────────               ──────
-修改 tools.yaml         →    git push            →    bootstrap.sh --pull
-修改 dotfiles           →    git push            →    bootstrap.sh --pull
-更新 secrets 模板       →    git push            →    init_secrets.sh
+修改 tools.yaml         →    git push            →    dotfiles update
+修改 dotfiles           →    git push            →    dotfiles update
+更新 secrets 模板       →    git push            →    run_once_setup-secrets.sh.tmpl
 ```
 
 **工作流：**
 1. 在机器 A 上做修改
 2. `git add . && git commit -m "..." && git push`
-3. 在机器 B 上：`cd ~/dotfiles && ./bootstrap.sh --pull`
+3. 在机器 B 上：`dotfiles update`
 
 ---
 
@@ -487,8 +482,8 @@ secrets.template.env   ← 已提交到 Git（仅占位符）
 | `la` | `eza -lah --git` | eza | 含隐藏文件的详细列表 |
 | `lt` | `eza --tree` | eza | 树形目录视图 |
 | `cat` | `bat --paging=never` | bat | 带语法高亮的文件查看 |
-| `grep` | `rg` | ripgrep | 快速全文搜索 |
-| `find` | `fd` | fd | 用户友好的文件查找 |
+| `rgrep` | `rg` | ripgrep | 快速全文搜索（不覆盖系统 grep） |
+| `ff` | `fd` | fd | 用户友好的文件查找（不覆盖系统 find） |
 | `du` | `dust` | dust | 直观的磁盘使用分析 |
 | `top` | `btop` | btop | 现代系统监控 |
 | `ps` | `procs` | procs | 现代进程查看 |
@@ -555,7 +550,6 @@ reload
 | mise runtimes 安装失败（GitHub rate limit） | 等待 rate limit 重置，或使用 `--skip-runtimes` 跳过 |
 | cmake 安装失败（rate limit） | cmake 通过 GitHub API 获取版本，rate limit 时会失败，属非致命错误 |
 | symlink 创建失败 | 检查文件权限，或以 `sudo` 运行 |
-| Secret 误报 | 在 `lib/secret_check.sh` 的 `SECRET_SKIP_PATTERNS` 中添加例外 |
-| 重新运行 secrets 向导 | `./scripts/init_secrets.sh` |
-| 环境检查 | `./bin/dotfiles doctor` 查看详细诊断报告 |
+| `Secret 误报` | 在 `hooks/pre-commit` 的 `SECRET_SKIP_PATTERNS` 中添加例外 |
+| `重新运行 secrets 向导` | `chezmoi apply` || 环境检查 | `./bin/dotfiles doctor` 查看详细诊断报告 |
 | 清理下载缓存 | `./bin/dotfiles cache clear` |

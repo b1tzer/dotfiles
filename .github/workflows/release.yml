@@ -24,6 +24,17 @@ jobs:
           
           echo "Injected repository URL: ${REPO_URL}"
           echo "Injected GitHub username: ${GITHUB_USERNAME}"
+          
+          # 验证占位符已被成功替换，否则以非零退出码终止
+          if grep -q "__DOTFILES_REPO__" install.sh; then
+            echo "ERROR: __DOTFILES_REPO__ placeholder was not replaced in install.sh" >&2
+            exit 1
+          fi
+          if grep -q "__GITHUB_USERNAME__" README.md; then
+            echo "ERROR: __GITHUB_USERNAME__ placeholder was not replaced in README.md" >&2
+            exit 1
+          fi
+          echo "Placeholder verification passed."
 
       - name: Upload files to Release
         uses: softprops/action-gh-release@v2

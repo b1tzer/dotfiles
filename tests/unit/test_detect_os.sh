@@ -14,20 +14,8 @@ REPO_ROOT="$(cd "$TESTS_DIR/../.." && pwd)"
 _PASS=0
 _FAIL=0
 
-_assert_eq() {
-  local desc="$1"
-  local expected="$2"
-  local actual="$3"
-  if [[ "$expected" == "$actual" ]]; then
-    echo "  [PASS] $desc"
-    _PASS=$(( _PASS + 1 ))
-  else
-    echo "  [FAIL] $desc" >&2
-    echo "         expected: '$expected'" >&2
-    echo "         actual:   '$actual'" >&2
-    _FAIL=$(( _FAIL + 1 ))
-  fi
-}
+# shellcheck source=tests/lib/assert.sh
+source "$TESTS_DIR/../lib/assert.sh"
 
 _assert_not_empty() {
   local desc="$1"

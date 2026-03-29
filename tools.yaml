@@ -370,7 +370,7 @@ tools:
     platforms:
       ubuntu:
         method: script
-        script: "https://github.com/dalance/procs/releases/latest/download/procs-v0.14.9-x86_64-linux.zip"
+        script: "https://github.com/dalance/procs/releases/latest/download/procs-x86_64-linux.zip"
         install_type: zip_binary
         binary: procs
       macos:
@@ -403,7 +403,7 @@ tools:
     platforms:
       ubuntu:
         method: script
-        script: "https://github.com/ogham/dog/releases/latest/download/dog-v0.1.0-x86_64-unknown-linux-gnu.zip"
+        script: "https://github.com/ogham/dog/releases/latest/download/dog-x86_64-unknown-linux-gnu.zip"
         install_type: zip_binary
         binary: dog
       macos:
@@ -415,7 +415,7 @@ tools:
     platforms:
       ubuntu:
         method: script
-        script: "https://github.com/imsnif/bandwhich/releases/latest/download/bandwhich-v0.23.1-x86_64-unknown-linux-musl.tar.gz"
+        script: "https://github.com/imsnif/bandwhich/releases/latest/download/bandwhich-x86_64-unknown-linux-musl.tar.gz"
         install_type: tar_binary
         binary: bandwhich
       macos:

@@ -103,18 +103,23 @@ _check_tools() {
     return 0
   fi
 
-  local tool_count
-  tool_count="$(yq e '.tools | length' "$TOOLS_YAML" 2>/dev/null || echo 0)"
+  local tool_names
+  tool_names="$(yq e '.tools[].name' "$TOOLS_YAML" 2>/dev/null || true)"
 
-  local i=0
-  while [[ "$i" -lt "$tool_count" ]]; do
-    local name check_cmd deprecated replaced_by platform_method
+  if [[ -z "$tool_names" ]]; then
+    _issue_warn "No tools found in tools.yaml"
+    return 0
+  fi
 
-    name="$(yq e ".tools[$i].name" "$TOOLS_YAML")"
-    check_cmd="$(yq e ".tools[$i].check_cmd // \"$name\"" "$TOOLS_YAML")"
-    deprecated="$(yq e ".tools[$i].deprecated // false" "$TOOLS_YAML")"
-    replaced_by="$(yq e ".tools[$i].replaced_by // \"\"" "$TOOLS_YAML")"
-    platform_method="$(yq e ".tools[$i].platforms.$OS_TYPE.method // \"\"" "$TOOLS_YAML")"
+  while IFS= read -r name; do
+    [[ -z "$name" ]] && continue
+
+    # 一次性读取该工具所有字段，减少 yq fork 次数
+    local tool_info
+    tool_info="$(yq e ".tools[] | select(.name == \"$name\") | [.check_cmd // .name, .deprecated // false, .replaced_by // \"\", .platforms.$OS_TYPE.method // \"\"] | join(\"|\")" "$TOOLS_YAML")"
+
+    local check_cmd deprecated replaced_by platform_method
+    IFS='|' read -r check_cmd deprecated replaced_by platform_method <<< "$tool_info"
 
     if [[ "$deprecated" == "true" ]]; then
       if pkg_is_installed "$check_cmd"; then
@@ -133,9 +138,7 @@ _check_tools() {
         "$name is not installed" \
         "Run: ./bin/dotfiles sync --only $name"
     fi
-
-    i=$(( i + 1 ))
-  done
+  done <<< "$tool_names"
 }
 
 # ---------------------------------------------------------------------------

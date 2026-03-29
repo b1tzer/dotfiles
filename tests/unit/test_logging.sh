@@ -14,35 +14,8 @@ REPO_ROOT="$(cd "$TESTS_DIR/../.." && pwd)"
 _PASS=0
 _FAIL=0
 
-_assert_contains() {
-  local desc="$1"
-  local haystack="$2"
-  local needle="$3"
-  if [[ "$haystack" == *"$needle"* ]]; then
-    echo "  [PASS] $desc"
-    _PASS=$(( _PASS + 1 ))
-  else
-    echo "  [FAIL] $desc" >&2
-    echo "         expected to contain: '$needle'" >&2
-    echo "         actual output: '$haystack'" >&2
-    _FAIL=$(( _FAIL + 1 ))
-  fi
-}
-
-_assert_not_contains() {
-  local desc="$1"
-  local haystack="$2"
-  local needle="$3"
-  if [[ "$haystack" != *"$needle"* ]]; then
-    echo "  [PASS] $desc"
-    _PASS=$(( _PASS + 1 ))
-  else
-    echo "  [FAIL] $desc" >&2
-    echo "         expected NOT to contain: '$needle'" >&2
-    echo "         actual output: '$haystack'" >&2
-    _FAIL=$(( _FAIL + 1 ))
-  fi
-}
+# shellcheck source=tests/lib/assert.sh
+source "$TESTS_DIR/../lib/assert.sh"
 
 echo
 echo "=== test_logging.sh ==="

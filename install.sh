@@ -36,7 +36,7 @@ _step()  { printf '\n\033[1m  ▶  %s\033[0m\n' "$*"; }
 # -----------------------------------------------------------------------------
 # 默认配置（可通过参数覆盖）
 # -----------------------------------------------------------------------------
-DOTFILES_REPO="${DOTFILES_REPO:-https://github.com/b1tzer/dotfiles}"
+DOTFILES_REPO="${DOTFILES_REPO:-__DOTFILES_REPO__}"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"  # 安装目录
 NO_SYNC=false                               # 跳过 dotfiles sync
 NO_SHELL_SETUP=false                        # 跳过写入 shell 配置
@@ -110,9 +110,50 @@ _info "运行同步  : $( [[ "$NO_SYNC" == "true" ]] && echo "否" || echo "是"
 echo
 
 # -----------------------------------------------------------------------------
-# 前置检查
+# 前置检查 & 自动安装 git
 # -----------------------------------------------------------------------------
 _step "检查依赖"
+
+# 自动安装 git
+_ensure_git() {
+  if command -v git &>/dev/null; then
+    _ok "git 已就绪"
+    return 0
+  fi
+
+  _warn "未检测到 git，尝试自动安装..."
+
+  if command -v apt-get &>/dev/null; then
+    # Debian / Ubuntu
+    sudo apt-get update -qq && sudo apt-get install -y git
+  elif command -v yum &>/dev/null; then
+    # CentOS / RHEL / TencentOS
+    sudo yum install -y git
+  elif command -v dnf &>/dev/null; then
+    # Fedora
+    sudo dnf install -y git
+  elif command -v pacman &>/dev/null; then
+    # Arch Linux
+    sudo pacman -Sy --noconfirm git
+  elif command -v brew &>/dev/null; then
+    # macOS (Homebrew)
+    brew install git
+  elif command -v apk &>/dev/null; then
+    # Alpine Linux
+    sudo apk add --no-cache git
+  else
+    _error "无法自动安装 git：未识别的包管理器。"
+    _error "请手动安装 git 后重试：https://git-scm.com/downloads"
+    exit 1
+  fi
+
+  if command -v git &>/dev/null; then
+    _ok "git 安装成功"
+  else
+    _error "git 安装失败，请手动安装后重试。"
+    exit 1
+  fi
+}
 
 _check_cmd() {
   if ! command -v "$1" &>/dev/null; then
@@ -123,7 +164,7 @@ _check_cmd() {
   _ok "$1 已就绪"
 }
 
-_check_cmd git
+_ensure_git
 _check_cmd curl
 
 # -----------------------------------------------------------------------------

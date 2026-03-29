@@ -23,14 +23,14 @@ if command -v bat &>/dev/null; then
   alias cat='bat --paging=never'
 fi
 
-# ripgrep - 快速 grep 替代
+# ripgrep - 快速 grep 替代（使用 rgrep 避免覆盖系统 grep）
 if command -v rg &>/dev/null; then
-  alias grep='rg'
+  alias rgrep='rg'
 fi
 
-# fd - 用户友好的 find 替代
+# fd - 用户友好的 find 替代（使用 ff 避免覆盖系统 find）
 if command -v fd &>/dev/null; then
-  alias find='fd'
+  alias ff='fd'
 fi
 
 # dust - 直观的磁盘使用分析

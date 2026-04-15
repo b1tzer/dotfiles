@@ -158,49 +158,36 @@ _ensure_yq() {
     ubuntu)
       local _sudo=""
       [[ "$(id -u)" -ne 0 ]] && _sudo="sudo"
-
-      # 优先用 wget 安装原生二进制（无沙箱限制），snap 作为最后备选
       local yq_arch="amd64"
       [[ "$(uname -m)" == "aarch64" ]] && yq_arch="arm64"
 
-      if command -v wget &>/dev/null; then
-        _info_log "Installing yq via wget (github releases)..."
+      # 1. 优先 apt（系统包管理器，最干净）
+      if $_sudo apt-get install -y yq &>/dev/null 2>&1; then
+        _ok_log "yq installed via apt: $(command -v yq)"
+      # 2. apt 没有 yq（Ubuntu 20.04 等旧版本），用 wget 下载原生二进制
+      elif command -v wget &>/dev/null; then
+        _info_log "apt install yq failed (may not be available), trying wget..."
         if $_sudo wget -qO /usr/local/bin/yq \
             "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${yq_arch}"; then
           $_sudo chmod +x /usr/local/bin/yq
-          # 确保 /usr/local/bin 优先于 /snap/bin
           export PATH="/usr/local/bin:$PATH"
-          if command -v yq &>/dev/null && [[ "$(command -v yq)" != /snap/* ]]; then
-            _ok_log "yq installed via wget: $(command -v yq)"
-          fi
+          _ok_log "yq installed via wget: /usr/local/bin/yq"
         else
-          _warn_log "wget download failed, falling back to snap..."
-          if command -v snap &>/dev/null; then
-            _info_log "Installing yq via snap..."
-            $_sudo snap install yq
-            export PATH="/snap/bin:$PATH"
-          else
-            _error_actionable \
-              "Failed to install yq" \
-              "wget download failed and snap is not available" \
-              "Install yq manually, then re-run: ./dotfiles sync" \
-              "  Ubuntu:  sudo apt install yq  (Ubuntu 21.04+)" \
-              "  Or:      https://github.com/mikefarah/yq/releases"
-            exit 1
-          fi
+          _error_actionable \
+            "Failed to install yq" \
+            "Both apt and wget download failed" \
+            "Install yq manually, then re-run: ./dotfiles sync" \
+            "  Ubuntu 21.04+: sudo apt install yq" \
+            "  Or:            https://github.com/mikefarah/yq/releases"
+          exit 1
         fi
-      elif command -v snap &>/dev/null; then
-        _warn_log "wget not found, falling back to snap (note: snap yq has sandbox restrictions)"
-        _info_log "Installing yq via snap..."
-        $_sudo snap install yq
-        export PATH="/snap/bin:$PATH"
       else
         _error_actionable \
           "Failed to install yq" \
-          "Neither wget nor snap is available" \
+          "apt install failed and wget is not available" \
           "Install yq manually, then re-run: ./dotfiles sync" \
-          "  Ubuntu:  sudo apt install wget && sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${yq_arch}" \
-          "  Or:      https://github.com/mikefarah/yq/releases"
+          "  Ubuntu 21.04+: sudo apt install yq" \
+          "  Or:            https://github.com/mikefarah/yq/releases"
         exit 1
       fi
       ;;

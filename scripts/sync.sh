@@ -138,45 +138,71 @@ _ensure_yq() {
     return 0
   fi
 
-  # 已安装则直接返回
+  # 已安装则检查是否为 snap 版本（snap 版受 AppArmor 沙箱限制，无法读取 home 目录文件）
   if command -v yq &>/dev/null; then
-    _info_log "yq already installed: $(command -v yq)"
-    return 0
+    local yq_path
+    yq_path="$(command -v yq)"
+    if [[ "$yq_path" == /snap/* ]]; then
+      _warn_log "yq is installed via snap ($yq_path), which has sandbox restrictions."
+      _warn_log "Reinstalling yq as a native binary to avoid permission issues..."
+      # 继续往下执行安装逻辑，覆盖 snap 版本
+    else
+      _info_log "yq already installed: $yq_path"
+      return 0
+    fi
+  else
+    _info_log "yq not found. Installing yq for YAML parsing..."
   fi
 
-  _info_log "yq not found. Installing yq for YAML parsing..."
   case "$OS_TYPE" in
     ubuntu)
       local _sudo=""
       [[ "$(id -u)" -ne 0 ]] && _sudo="sudo"
 
-      # 优先尝试 snap（离线/内网友好），再回退到 wget 下载
-      if command -v snap &>/dev/null; then
-        _info_log "Installing yq via snap..."
-        $_sudo snap install yq
-        # snap 安装后二进制在 /snap/bin，确保加入 PATH
-        export PATH="/snap/bin:$PATH"
-        if command -v yq &>/dev/null; then
-          return 0
-        fi
-        _warn_log "snap install yq succeeded but yq not found in PATH, falling back to wget..."
-      fi
-
-      _info_log "Installing yq via wget (github releases)..."
+      # 优先用 wget 安装原生二进制（无沙箱限制），snap 作为最后备选
       local yq_arch="amd64"
       [[ "$(uname -m)" == "aarch64" ]] && yq_arch="arm64"
-      if ! $_sudo wget -qO /usr/local/bin/yq \
-          "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${yq_arch}"; then
+
+      if command -v wget &>/dev/null; then
+        _info_log "Installing yq via wget (github releases)..."
+        if $_sudo wget -qO /usr/local/bin/yq \
+            "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${yq_arch}"; then
+          $_sudo chmod +x /usr/local/bin/yq
+          # 确保 /usr/local/bin 优先于 /snap/bin
+          export PATH="/usr/local/bin:$PATH"
+          if command -v yq &>/dev/null && [[ "$(command -v yq)" != /snap/* ]]; then
+            _ok_log "yq installed via wget: $(command -v yq)"
+          fi
+        else
+          _warn_log "wget download failed, falling back to snap..."
+          if command -v snap &>/dev/null; then
+            _info_log "Installing yq via snap..."
+            $_sudo snap install yq
+            export PATH="/snap/bin:$PATH"
+          else
+            _error_actionable \
+              "Failed to install yq" \
+              "wget download failed and snap is not available" \
+              "Install yq manually, then re-run: ./dotfiles sync" \
+              "  Ubuntu:  sudo apt install yq  (Ubuntu 21.04+)" \
+              "  Or:      https://github.com/mikefarah/yq/releases"
+            exit 1
+          fi
+        fi
+      elif command -v snap &>/dev/null; then
+        _warn_log "wget not found, falling back to snap (note: snap yq has sandbox restrictions)"
+        _info_log "Installing yq via snap..."
+        $_sudo snap install yq
+        export PATH="/snap/bin:$PATH"
+      else
         _error_actionable \
-          "Failed to download yq" \
-          "Network may be unavailable or GitHub is unreachable" \
+          "Failed to install yq" \
+          "Neither wget nor snap is available" \
           "Install yq manually, then re-run: ./dotfiles sync" \
-          "  Ubuntu:  sudo snap install yq" \
-          "  Or:      sudo apt install yq  (Ubuntu 21.04+)" \
+          "  Ubuntu:  sudo apt install wget && sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${yq_arch}" \
           "  Or:      https://github.com/mikefarah/yq/releases"
         exit 1
       fi
-      $_sudo chmod +x /usr/local/bin/yq
       ;;
     macos)
       if ! command -v brew &>/dev/null; then

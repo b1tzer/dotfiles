@@ -138,17 +138,18 @@ _ensure_yq() {
     return 0
   fi
 
-  # 已安装则检查是否为 snap 版本（snap 版受 AppArmor 沙箱限制，无法读取 home 目录文件）
+  # 已安装则检查是否为 Go 版 yq（mikefarah/yq），其他版本（snap 沙箱版、apt Python 版）需重装
   if command -v yq &>/dev/null; then
     local yq_path
     yq_path="$(command -v yq)"
-    if [[ "$yq_path" == /snap/* ]]; then
-      _warn_log "yq is installed via snap ($yq_path), which has sandbox restrictions."
-      _warn_log "Reinstalling yq as a native binary to avoid permission issues..."
-      # 继续往下执行安装逻辑，覆盖 snap 版本
-    else
-      _info_log "yq already installed: $yq_path"
+    # Go 版 yq 的 --version 输出格式为 "yq (https://github.com/mikefarah/yq/) version v4.x.x"
+    if yq --version 2>&1 | grep -q "mikefarah"; then
+      _info_log "yq already installed (mikefarah/yq): $yq_path"
       return 0
+    else
+      _warn_log "yq at $yq_path is not mikefarah/yq (may be Python yq or snap version)."
+      _warn_log "Reinstalling mikefarah/yq to ensure compatibility..."
+      # 继续往下执行安装逻辑，覆盖不兼容版本
     fi
   else
     _info_log "yq not found. Installing yq for YAML parsing..."
@@ -161,12 +162,10 @@ _ensure_yq() {
       local yq_arch="amd64"
       [[ "$(uname -m)" == "aarch64" ]] && yq_arch="arm64"
 
-      # 1. 优先 apt（系统包管理器，最干净）
-      if $_sudo apt-get install -y yq &>/dev/null 2>&1; then
-        _ok_log "yq installed via apt: $(command -v yq)"
-      # 2. apt 没有 yq（Ubuntu 20.04 等旧版本），用 wget 下载原生二进制
-      elif command -v wget &>/dev/null; then
-        _info_log "apt install yq failed (may not be available), trying wget..."
+      # 注意：apt 源里的 yq 是 Python 版（kislyuk/yq），语法与 mikefarah/yq 不兼容，不能使用
+      # 直接用 wget 下载 mikefarah/yq 原生二进制到 /usr/local/bin（优先级高于 /usr/bin）
+      _info_log "Installing mikefarah/yq via wget..."
+      if command -v wget &>/dev/null; then
         if $_sudo wget -qO /usr/local/bin/yq \
             "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${yq_arch}"; then
           $_sudo chmod +x /usr/local/bin/yq
@@ -174,20 +173,19 @@ _ensure_yq() {
           _ok_log "yq installed via wget: /usr/local/bin/yq"
         else
           _error_actionable \
-            "Failed to install yq" \
-            "Both apt and wget download failed" \
+            "Failed to download yq" \
+            "Network may be unavailable or GitHub is unreachable" \
             "Install yq manually, then re-run: ./dotfiles sync" \
-            "  Ubuntu 21.04+: sudo apt install yq" \
-            "  Or:            https://github.com/mikefarah/yq/releases"
+            "  sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${yq_arch}" \
+            "  sudo chmod +x /usr/local/bin/yq"
           exit 1
         fi
       else
         _error_actionable \
           "Failed to install yq" \
-          "apt install failed and wget is not available" \
-          "Install yq manually, then re-run: ./dotfiles sync" \
-          "  Ubuntu 21.04+: sudo apt install yq" \
-          "  Or:            https://github.com/mikefarah/yq/releases"
+          "wget is not available" \
+          "Install wget first: sudo apt install wget" \
+          "Then re-run: ./dotfiles sync"
         exit 1
       fi
       ;;

@@ -153,7 +153,13 @@ _ensure_yq() {
       # 优先尝试 snap（离线/内网友好），再回退到 wget 下载
       if command -v snap &>/dev/null; then
         _info_log "Installing yq via snap..."
-        $_sudo snap install yq && return 0
+        $_sudo snap install yq
+        # snap 安装后二进制在 /snap/bin，确保加入 PATH
+        export PATH="/snap/bin:$PATH"
+        if command -v yq &>/dev/null; then
+          return 0
+        fi
+        _warn_log "snap install yq succeeded but yq not found in PATH, falling back to wget..."
       fi
 
       _info_log "Installing yq via wget (github releases)..."

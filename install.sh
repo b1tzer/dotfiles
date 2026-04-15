@@ -187,6 +187,17 @@ else
   _ok "仓库已克隆到 $DOTFILES_DIR"
 fi
 
+# 确保仓库目录归当前用户所有，并具有正确的读写权限
+# （在某些环境下 git clone 可能以 root 身份执行，导致后续读取失败）
+if [ "$(stat -c '%U' "$DOTFILES_DIR" 2>/dev/null || stat -f '%Su' "$DOTFILES_DIR" 2>/dev/null)" != "$(id -un)" ]; then
+  _warn "仓库目录归属不正确，尝试修正..."
+  sudo chown -R "$(id -un):$(id -gn)" "$DOTFILES_DIR" || {
+    _error "无法修正目录权限，请手动执行：sudo chown -R $(id -un) $DOTFILES_DIR"
+    exit 1
+  }
+fi
+chmod -R u+rX "$DOTFILES_DIR"
+
 # -----------------------------------------------------------------------------
 # Step 2：确保 bin/dotfiles 可执行
 # -----------------------------------------------------------------------------

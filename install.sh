@@ -19,6 +19,17 @@
 set -e
 
 # -----------------------------------------------------------------------------
+# 日志文件
+# -----------------------------------------------------------------------------
+INSTALL_LOG="${DOTFILES_INSTALL_LOG:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/install.log}"
+mkdir -p "$(dirname "$INSTALL_LOG")" 2>/dev/null || INSTALL_LOG="/tmp/dotfiles-install-$$.log"
+
+_log() {
+  local level="$1"; shift
+  printf '[%s] [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$level" "$*" >> "$INSTALL_LOG"
+}
+
+# -----------------------------------------------------------------------------
 # 颜色输出
 # -----------------------------------------------------------------------------
 _tty_red()    { printf '\033[0;31m%s\033[0m\n' "$*"; }
@@ -27,11 +38,12 @@ _tty_yellow() { printf '\033[1;33m%s\033[0m\n' "$*"; }
 _tty_bold()   { printf '\033[1m%s\033[0m\n'    "$*"; }
 _tty_cyan()   { printf '\033[0;36m%s\033[0m\n' "$*"; }
 
-_info()  { printf '  \033[0;36m→\033[0m  %s\n' "$*"; }
-_ok()    { printf '  \033[0;32m✓\033[0m  %s\n' "$*"; }
-_warn()  { printf '  \033[1;33m⚠\033[0m  %s\n' "$*" >&2; }
-_error() { printf '  \033[0;31m✗\033[0m  %s\n' "$*" >&2; }
-_step()  { printf '\n\033[1m  ▶  %s\033[0m\n' "$*"; }
+_info()  { printf '  \033[0;36m→\033[0m  %s\n' "$*";  _log "INFO"  "$*"; }
+_ok()    { printf '  \033[0;32m✓\033[0m  %s\n' "$*";  _log "OK"    "$*"; }
+_warn()  { printf '  \033[1;33m⚠\033[0m  %s\n' "$*" >&2; _log "WARN" "$*"; }
+_error() { printf '  \033[0;31m✗\033[0m  %s\n' "$*" >&2; _log "ERROR" "$*"; }
+_step()  { printf '\n\033[1m  ▶  %s\033[0m\n' "$*";   _log "STEP"  "$*"; }
+_debug() { printf '  \033[0;90m[debug] %s\033[0m\n' "$*"; _log "DEBUG" "$*"; }
 
 # -----------------------------------------------------------------------------
 # 默认配置（可通过参数覆盖）
@@ -107,7 +119,12 @@ echo
 _info "仓库地址  : $DOTFILES_REPO"
 _info "安装目录  : $DOTFILES_DIR"
 _info "运行同步  : $( [ "$NO_SYNC" = "true" ] && echo "否" || echo "是" )"
+_info "日志文件  : $INSTALL_LOG"
 echo
+
+_log "INFO" "======== install.sh 启动 ========"
+_log "INFO" "REPO=$DOTFILES_REPO  DIR=$DOTFILES_DIR  USER=$(id -un)  UID=$(id -u)"
+_log "INFO" "OS=$(uname -s)  ARCH=$(uname -m)  SHELL=${SHELL:-unknown}"
 
 # -----------------------------------------------------------------------------
 # 前置检查 & 自动安装 git
@@ -189,14 +206,20 @@ fi
 
 # 确保仓库目录归当前用户所有，并具有正确的读写权限
 # （在某些环境下 git clone 可能以 root 身份执行，导致后续读取失败）
+_debug "检查目录归属: $(stat -c 'owner=%U mode=%a' "$DOTFILES_DIR" 2>/dev/null || stat -f 'owner=%Su mode=%p' "$DOTFILES_DIR" 2>/dev/null || echo '无法获取')"
+_debug "当前用户: $(id -un) (uid=$(id -u) gid=$(id -g))"
+_debug "tools.yaml 权限: $(stat -c 'owner=%U mode=%a' "$DOTFILES_DIR/tools.yaml" 2>/dev/null || echo '文件不存在或无法读取')"
+
 if [ "$(stat -c '%U' "$DOTFILES_DIR" 2>/dev/null || stat -f '%Su' "$DOTFILES_DIR" 2>/dev/null)" != "$(id -un)" ]; then
   _warn "仓库目录归属不正确，尝试修正..."
+  _log "DEBUG" "chown -R $(id -un):$(id -gn) $DOTFILES_DIR"
   sudo chown -R "$(id -un):$(id -gn)" "$DOTFILES_DIR" || {
     _error "无法修正目录权限，请手动执行：sudo chown -R $(id -un) $DOTFILES_DIR"
     exit 1
   }
 fi
 chmod -R u+rX "$DOTFILES_DIR"
+_debug "修正后 tools.yaml 权限: $(stat -c 'owner=%U mode=%a' "$DOTFILES_DIR/tools.yaml" 2>/dev/null || echo '无法获取')"
 
 # -----------------------------------------------------------------------------
 # Step 2：确保 bin/dotfiles 可执行
@@ -281,7 +304,17 @@ if [ "$NO_SYNC" = "true" ]; then
   _warn "安装完成后请手动运行：dotfiles sync"
 else
   _step "运行 dotfiles sync"
-  "$BIN_DIR/dotfiles" sync
+
+  # 运行前诊断
+  _debug "sync 前环境诊断："
+  _debug "  当前用户     : $(id -un) (uid=$(id -u))"
+  _debug "  DOTFILES_DIR : $DOTFILES_DIR"
+  _debug "  tools.yaml   : $(ls -la "$DOTFILES_DIR/tools.yaml" 2>/dev/null || echo '不存在或无权限')"
+  _debug "  bin/dotfiles : $(ls -la "$BIN_DIR/dotfiles" 2>/dev/null || echo '不存在')"
+  _debug "  PATH         : $PATH"
+  _log "DEBUG" "sync 前: user=$(id -un) uid=$(id -u) tools.yaml=$(stat -c '%U %a' "$DOTFILES_DIR/tools.yaml" 2>/dev/null || echo 'N/A')"
+
+  DOTFILES_INSTALL_LOG="$INSTALL_LOG" "$BIN_DIR/dotfiles" sync
 fi
 
 # -----------------------------------------------------------------------------
@@ -302,4 +335,6 @@ echo "    2. 之后即可直接使用 dotfiles 命令："
 echo "         dotfiles sync       # 同步工具和配置"
 echo "         dotfiles update     # 拉取最新配置并同步"
 echo "         dotfiles doctor     # 检查环境健康状态"
+echo
+_tty_cyan  "  安装日志：$INSTALL_LOG"
 echo

@@ -138,16 +138,49 @@ _ensure_yq() {
     return 0
   fi
 
+  # 已安装则直接返回
+  if command -v yq &>/dev/null; then
+    _info_log "yq already installed: $(command -v yq)"
+    return 0
+  fi
+
   _info_log "yq not found. Installing yq for YAML parsing..."
   case "$OS_TYPE" in
     ubuntu)
       local _sudo=""
       [[ "$(id -u)" -ne 0 ]] && _sudo="sudo"
-      $_sudo wget -qO /usr/local/bin/yq \
-        "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64"
+
+      # 优先尝试 snap（离线/内网友好），再回退到 wget 下载
+      if command -v snap &>/dev/null; then
+        _info_log "Installing yq via snap..."
+        $_sudo snap install yq && return 0
+      fi
+
+      _info_log "Installing yq via wget (github releases)..."
+      local yq_arch="amd64"
+      [[ "$(uname -m)" == "aarch64" ]] && yq_arch="arm64"
+      if ! $_sudo wget -qO /usr/local/bin/yq \
+          "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${yq_arch}"; then
+        _error_actionable \
+          "Failed to download yq" \
+          "Network may be unavailable or GitHub is unreachable" \
+          "Install yq manually, then re-run: ./dotfiles sync" \
+          "  Ubuntu:  sudo snap install yq" \
+          "  Or:      sudo apt install yq  (Ubuntu 21.04+)" \
+          "  Or:      https://github.com/mikefarah/yq/releases"
+        exit 1
+      fi
       $_sudo chmod +x /usr/local/bin/yq
       ;;
     macos)
+      if ! command -v brew &>/dev/null; then
+        _error_actionable \
+          "yq is required but not installed" \
+          "Homebrew is also not available" \
+          "Install yq manually: brew install yq" \
+          "Or download from: https://github.com/mikefarah/yq/releases"
+        exit 1
+      fi
       brew install yq
       ;;
     *)
@@ -158,6 +191,16 @@ _ensure_yq() {
       exit 1
       ;;
   esac
+
+  # 安装后验证
+  if ! command -v yq &>/dev/null; then
+    _error_actionable \
+      "yq installation appeared to succeed but 'yq' is still not in PATH" \
+      "Try opening a new terminal and re-running" \
+      "Or install yq manually: https://github.com/mikefarah/yq"
+    exit 1
+  fi
+  _ok_log "yq installed successfully: $(command -v yq)"
 }
 
 # ---------------------------------------------------------------------------
